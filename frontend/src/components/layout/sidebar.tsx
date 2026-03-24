@@ -17,12 +17,14 @@ export function Sidebar({ orgSlug }: SidebarProps) {
   const { data: orgs } = useOrgs();
 
   const hasOrgs = Array.isArray(orgs) && orgs.length > 0;
+  // If no slug in URL but user has orgs, use first org's slug
+  const effectiveSlug = orgSlug || (hasOrgs ? (orgs[0] as { slug: string }).slug : "");
   const currentOrg = hasOrgs
-    ? orgs.find((o: { slug: string }) => o.slug === orgSlug)
+    ? (orgs as Array<{ slug: string }>).find((o) => o.slug === effectiveSlug)
     : null;
 
-  // No org or no slug — show minimal sidebar
-  if (!hasOrgs || !orgSlug) {
+  // Only show minimal sidebar if user truly has no orgs
+  if (!hasOrgs) {
     return (
       <aside className="flex h-full w-60 flex-col border-r bg-muted/20">
         <div className="flex items-center gap-2 border-b px-4 py-3">
@@ -62,7 +64,7 @@ export function Sidebar({ orgSlug }: SidebarProps) {
   // Has org — full navigation (only pages that exist)
   const navItems = [
     {
-      href: `/org/${orgSlug}`,
+      href: `/org/${effectiveSlug}`,
       label: "Dashboard",
       icon: <LayoutDashboard className="size-4" />,
     },
@@ -72,7 +74,7 @@ export function Sidebar({ orgSlug }: SidebarProps) {
       icon: <CheckSquare className="size-4" />,
     },
     {
-      href: `/org/${orgSlug}/settings`,
+      href: `/org/${effectiveSlug}/settings`,
       label: "Settings",
       icon: <Settings className="size-4" />,
     },
