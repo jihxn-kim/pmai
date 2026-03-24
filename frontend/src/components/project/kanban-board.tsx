@@ -53,7 +53,9 @@ export function KanbanBoard({ projectId }: KanbanBoardProps) {
 
   const tasks: Task[] = Array.isArray(data)
     ? data
-    : (data as { results?: Task[] })?.results ?? [];
+    : Array.isArray((data as { data?: Task[] })?.data)
+      ? (data as { data: Task[] }).data
+      : [];
 
   const grouped = STATUSES.reduce<Record<TaskStatus, Task[]>>(
     (acc, status) => {

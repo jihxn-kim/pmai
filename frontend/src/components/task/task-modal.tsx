@@ -96,7 +96,7 @@ export function TaskModal({
       title,
       description: description || undefined,
       priority,
-      assignee_id: assigneeId || undefined,
+      assignee_id: assigneeId && assigneeId !== "unassigned" ? assigneeId : undefined,
       due_date: dueDate || undefined,
     };
 
