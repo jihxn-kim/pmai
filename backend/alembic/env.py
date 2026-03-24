@@ -3,8 +3,6 @@ import sys
 import os
 from logging.config import fileConfig
 
-from sqlalchemy import pool
-
 from alembic import context
 
 # Ensure the backend directory is on sys.path so app imports work
@@ -46,7 +44,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
     with context.begin_transaction():
         context.run_migrations()
 

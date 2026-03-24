@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,6 +25,7 @@ class PullRequest(Base):
     __tablename__ = "pull_requests"
     __table_args__ = (
         Index("ix_pull_requests_project_id_state", "project_id", "state"),
+        UniqueConstraint("project_id", "github_pr_id", name="uq_pull_requests_project_github_pr"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
