@@ -7,6 +7,8 @@ import api from "@/lib/api";
 import { MemberList, type Member } from "@/components/org/member-list";
 import { SlackConnect } from "@/components/slack/slack-connect";
 import { UserMapping } from "@/components/slack/user-mapping";
+import { CalendarConnect } from "@/components/calendar/calendar-connect";
+import { NotionConnect } from "@/components/notion/notion-connect";
 import {
   Card,
   CardHeader,
@@ -299,6 +301,50 @@ export default function OrgSettingsPage({ params }: OrgSettingsPageProps) {
             </CardContent>
           </Card>
         </>
+      )}
+
+      {/* ── Google Calendar 연동 ── */}
+      <Separator />
+      <div>
+        <h2 className="text-xl font-semibold">Google Calendar 연동</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Google Calendar를 연결하여 미팅 일정을 자동으로 동기화합니다.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Google Calendar 연결</CardTitle>
+          <CardDescription>
+            개인 Google 계정의 Calendar를 연결합니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CalendarConnect />
+        </CardContent>
+      </Card>
+
+      {/* ── Notion 연동 ── */}
+      <Separator />
+      <div>
+        <h2 className="text-xl font-semibold">Notion 연동</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Notion 워크스페이스를 연결하여 프로젝트 문서를 동기화합니다.
+        </p>
+      </div>
+
+      {orgId && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Notion 연결</CardTitle>
+            <CardDescription>
+              Notion 워크스페이스를 연결합니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <NotionConnect orgId={orgId} />
+          </CardContent>
+        </Card>
       )}
     </div>
   );
