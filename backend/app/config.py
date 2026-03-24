@@ -28,6 +28,16 @@ class Settings(BaseSettings):
     slack_client_secret: str = ""
     slack_signing_secret: str = ""
 
+    # Google Calendar
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/api/calendar/oauth/callback"
+
+    # Notion
+    notion_client_id: str = ""
+    notion_client_secret: str = ""
+    notion_redirect_uri: str = "http://localhost:8000/api/notion/oauth/callback"
+
     model_config = {"env_file": ".env"}
 
 
