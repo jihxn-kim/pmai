@@ -314,6 +314,16 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 except Exception:
                     pass
 
+                # Notion briefing page creation (best-effort)
+                try:
+                    from app.services.notion.documents import create_briefing_page
+                    await create_briefing_page(db, org.id, {
+                        "week_start": str(briefing.week_start),
+                        "org_summary": briefing.org_summary,
+                    })
+                except Exception:
+                    pass
+
             job.status = JobStatus.completed
             job.completed_at = datetime.now(timezone.utc)
 
