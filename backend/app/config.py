@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     github_client_id: str = ""
     github_client_secret: str = ""
     github_app_id: str = ""
+    github_app_slug: str = ""  # GitHub App URL slug (for install link)
     github_app_private_key: str = ""
     github_webhook_secret: str = ""
 

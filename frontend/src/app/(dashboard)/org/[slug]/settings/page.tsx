@@ -7,6 +7,7 @@ import api from "@/lib/api";
 import { MemberList, type Member } from "@/components/org/member-list";
 import { SlackConnect } from "@/components/slack/slack-connect";
 import { UserMapping } from "@/components/slack/user-mapping";
+import { GitHubInstall } from "@/components/github/github-install";
 import { CalendarConnect } from "@/components/calendar/calendar-connect";
 import { NotionConnect } from "@/components/notion/notion-connect";
 import {
@@ -265,6 +266,16 @@ export default function OrgSettingsPage({ params }: OrgSettingsPageProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* ── GitHub App 연동 ── */}
+      <Separator />
+      <div>
+        <h2 className="text-xl font-semibold">GitHub App 연동</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          GitHub App을 설치하면 레포 연결, PR/이슈 sync가 가능합니다.
+        </p>
+      </div>
+      {orgId && <GitHubInstall orgId={orgId} />}
 
       {/* ── Slack 연동 ── */}
       <Separator />
