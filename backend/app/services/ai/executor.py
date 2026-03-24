@@ -101,7 +101,7 @@ async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> dic
         system_prompt=system_prompt,
         model=settings.ai_model,
         max_turns=settings.ai_max_turns,
-        permission_mode="auto",
+        permission_mode="bypassPermissions",
     )
 
     raw_output: str | None = None
