@@ -20,7 +20,7 @@ export function Sidebar({ orgSlug }: SidebarProps) {
   // If no slug in URL but user has orgs, use first org's slug
   const effectiveSlug = orgSlug || (hasOrgs ? (orgs[0] as { slug: string }).slug : "");
   const currentOrg = hasOrgs
-    ? (orgs as Array<{ slug: string }>).find((o) => o.slug === effectiveSlug)
+    ? (orgs as Array<{ slug: string; name: string }>).find((o) => o.slug === effectiveSlug)
     : null;
 
   // Only show minimal sidebar if user truly has no orgs

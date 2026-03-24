@@ -41,7 +41,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
   return (
     <Card
       className="cursor-pointer transition-shadow hover:shadow-md"
-      onClick={() => router.push(`/org/${project.org_slug}/projects/${project.slug}`)}
+      onClick={() => router.push(`/org/${project.org_slug}/project/${project.id}`)}
     >
       <CardHeader>
         <div className="flex items-start justify-between gap-2">

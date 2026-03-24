@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useOrgs, useOrgDashboard } from "@/hooks/use-orgs";
 import { useLatestBriefing } from "@/hooks/use-ai";
@@ -8,7 +8,12 @@ import { ProjectCard, type ProjectSummary } from "@/components/org/project-card"
 import { ActivityFeed } from "@/components/org/activity-feed";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Plus, FolderKanban, Newspaper, ArrowRight } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import api from "@/lib/api";
 
 interface OrgDashboardPageProps {
   params: Promise<{ slug: string }>;
@@ -17,6 +22,10 @@ interface OrgDashboardPageProps {
 export default function OrgDashboardPage({ params }: OrgDashboardPageProps) {
   const { slug } = use(params);
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const { data: orgs, isLoading: orgsLoading } = useOrgs();
 
@@ -33,6 +42,22 @@ export default function OrgDashboardPage({ params }: OrgDashboardPageProps) {
   const { data: latestBriefing } = useLatestBriefing(orgId);
 
   const isLoading = orgsLoading || (!!orgId && dashboardLoading);
+
+  const handleCreateProject = async () => {
+    if (!projectName || !orgId) return;
+    setCreating(true);
+    try {
+      const resp = await api.post(`/api/orgs/${orgId}/projects`, { name: projectName });
+      await queryClient.invalidateQueries({ queryKey: ["org-dashboard", orgId] });
+      setShowCreateProject(false);
+      setProjectName("");
+      router.push(`/org/${slug}/project/${resp.data.id}`);
+    } catch {
+      alert("프로젝트 생성 실패");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -70,7 +95,7 @@ export default function OrgDashboardPage({ params }: OrgDashboardPageProps) {
           </p>
         </div>
         <Button
-          onClick={() => router.push(`/org/${slug}/projects/new`)}
+          onClick={() => setShowCreateProject(true)}
           className="gap-1.5"
         >
           <Plus className="size-4" />
@@ -89,7 +114,7 @@ export default function OrgDashboardPage({ params }: OrgDashboardPageProps) {
             </p>
           </div>
           <Button
-            onClick={() => router.push(`/org/${slug}/projects/new`)}
+            onClick={() => setShowCreateProject(true)}
             className="gap-1.5"
           >
             <Plus className="size-4" />
@@ -182,6 +207,30 @@ export default function OrgDashboardPage({ params }: OrgDashboardPageProps) {
           </div>
         </div>
       )}
+      <Dialog open={showCreateProject} onOpenChange={setShowCreateProject}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>프로젝트 만들기</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 pt-2">
+            <div>
+              <Label>프로젝트 이름</Label>
+              <Input
+                placeholder="예: PM Agent Backend"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateProject()}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowCreateProject(false)}>취소</Button>
+              <Button onClick={handleCreateProject} disabled={creating || !projectName}>
+                {creating ? "생성 중..." : "생성"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
