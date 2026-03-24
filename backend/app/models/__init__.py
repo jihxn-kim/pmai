@@ -8,6 +8,8 @@ from app.models.task import Task, TaskPriority, TaskStatus
 from app.models.user import RefreshToken, User
 from app.models.slack import SlackChannelMapping, SlackUserMapping, SlackWorkspace
 from app.models.weekly_briefing import BriefingStatus, WeeklyBriefing
+from app.models.calendar import CalendarEventMapping, GoogleCalendarConnection
+from app.models.notion import NotionConnection, NotionDatabaseMapping, NotionTaskMapping
 
 __all__ = [
     # User models
@@ -49,4 +51,11 @@ __all__ = [
     "SlackWorkspace",
     "SlackChannelMapping",
     "SlackUserMapping",
+    # Calendar models
+    "GoogleCalendarConnection",
+    "CalendarEventMapping",
+    # Notion models
+    "NotionConnection",
+    "NotionDatabaseMapping",
+    "NotionTaskMapping",
 ]
