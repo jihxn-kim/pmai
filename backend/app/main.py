@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import auth, orgs, projects
+from app.routers import auth, orgs, projects, tasks
 
 app = FastAPI(title="PM Agent API")
 
@@ -38,6 +38,7 @@ async def structured_error_handler(request: Request, exc: Exception):
 app.include_router(auth.router)
 app.include_router(orgs.router)
 app.include_router(projects.router)
+app.include_router(tasks.router)
 
 
 @app.get("/api/health")
