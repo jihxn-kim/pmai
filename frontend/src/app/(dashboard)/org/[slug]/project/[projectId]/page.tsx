@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useProject } from "@/hooks/use-projects";
 import { OverviewTab } from "@/components/project/overview-tab";
 import { GitHubTab } from "@/components/project/github-tab";
+import { GitHubConnect } from "@/components/project/github-connect";
 import { TeamTab } from "@/components/project/team-tab";
 import { IssuesTab } from "@/components/project/issues-tab";
 import { KanbanBoard } from "@/components/project/kanban-board";
@@ -96,16 +97,12 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
               {status.label}
             </span>
           </div>
-          {project.repo_url && (
-            <a
-              href={project.repo_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-0.5 text-sm text-muted-foreground hover:underline"
-            >
-              {project.repo_url}
-            </a>
-          )}
+          <div className="mt-1.5">
+            <GitHubConnect
+              projectId={projectId}
+              githubRepoUrl={project.github_repo_url}
+            />
+          </div>
         </div>
       </div>
 
