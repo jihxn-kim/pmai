@@ -1,7 +1,10 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 
 from app.config import settings
 from app.routers import auth, orgs, projects, tasks
@@ -9,7 +12,43 @@ from app.routers import github
 from app.routers import dashboard
 from app.routers import ai, briefings
 
-app = FastAPI(title="PM Agent API")
+try:
+    from app.scheduler import scheduler
+    HAS_SCHEDULER = True
+except ImportError:
+    HAS_SCHEDULER = False
+
+try:
+    from app.services.ai.worker import recover_stuck_jobs
+    HAS_WORKER = True
+except ImportError:
+    HAS_WORKER = False
+
+from app.models.ai_job_queue import AIJobQueue, JobStatus
+from app.database import async_session
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    # Startup
+    if HAS_SCHEDULER:
+        scheduler.start()
+    if HAS_WORKER:
+        await recover_stuck_jobs()
+    yield
+    # Shutdown: mark running AI jobs as queued for recovery on next start
+    async with async_session() as db:
+        running = await db.execute(
+            select(AIJobQueue).where(AIJobQueue.status == JobStatus.running)
+        )
+        for job in running.scalars():
+            job.status = JobStatus.queued
+        await db.commit()
+    if HAS_SCHEDULER:
+        scheduler.shutdown()
+
+
+app = FastAPI(title="PM Agent API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
