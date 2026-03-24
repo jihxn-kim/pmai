@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     notion_client_secret: str = ""
     notion_redirect_uri: str = "http://localhost:8000/api/notion/oauth/callback"
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

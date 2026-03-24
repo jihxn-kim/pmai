@@ -43,7 +43,10 @@ cd pmai
 
 ```bash
 cp .env.example .env
+cp .env backend/.env
 ```
+
+> **중요:** `.env` 파일은 프로젝트 루트와 `backend/` 디렉토리 **양쪽에** 있어야 합니다. 루트의 `.env`는 Docker Compose용, `backend/.env`는 로컬 개발 시 FastAPI가 읽습니다.
 
 `.env` 파일을 열고 필수 값들을 채웁니다:
 
@@ -56,7 +59,13 @@ JWT_SECRET_KEY=생성된_랜덤_문자열
 GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
 GITHUB_APP_ID=your_app_id
+NEXT_PUBLIC_GITHUB_CLIENT_ID=GITHUB_CLIENT_ID와_동일한_값
+
+# 프론트엔드 URL (포트가 3000이 아닌 경우 변경)
+FRONTEND_URL=http://localhost:3000
 ```
+
+> **포트 충돌 시:** 프론트엔드가 3000이 아닌 다른 포트(예: 3003)로 뜨면, `FRONTEND_URL`을 해당 포트로 변경하세요. `.env`를 수정한 후에는 반드시 `backend/.env`에도 복사하고 백엔드를 재시작해야 합니다.
 
 ### 3. 데이터베이스 실행
 
