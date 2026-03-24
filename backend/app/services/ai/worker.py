@@ -147,6 +147,19 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 except Exception:
                     pass  # Non-critical
 
+                # Slack notification for AI review
+                try:
+                    from app.services.slack.notifications import send_slack_notification
+                    from app.services.slack.formatters import format_ai_review_notification
+                    score = result.get("score")
+                    await send_slack_notification(
+                        db, org_id=project.org_id, channel_type="project", project_id=project.id,
+                        blocks=format_ai_review_notification(review.summary or "", payload["pr_number"], score),
+                        text=f"AI 리뷰 완료: PR #{payload['pr_number']}",
+                    )
+                except Exception:
+                    pass
+
             elif job.job_type == JobType.analysis:
                 if not project or not project.github_repo_url:
                     raise ValueError("Project has no GitHub repo connected")
@@ -288,6 +301,18 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 db.add(briefing)
                 await db.flush()
                 job.briefing_id = briefing.id
+
+                # Slack notification for briefing
+                try:
+                    from app.services.slack.notifications import send_slack_notification
+                    from app.services.slack.formatters import format_briefing_notification
+                    await send_slack_notification(
+                        db, org_id=org.id, channel_type="org",
+                        blocks=format_briefing_notification(briefing.org_summary, str(briefing.week_start)),
+                        text="주간 브리핑이 생성되었습니다.",
+                    )
+                except Exception:
+                    pass
 
             job.status = JobStatus.completed
             job.completed_at = datetime.now(timezone.utc)

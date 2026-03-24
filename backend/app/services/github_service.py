@@ -396,6 +396,20 @@ async def handle_pull_request(db: AsyncSession, payload: dict) -> None:
         from app.services.ai.worker import process_ai_job
         asyncio.create_task(process_ai_job(job.id))
 
+    # Slack notification (best-effort, at the end of the function)
+    try:
+        from app.services.slack.notifications import send_slack_notification
+        from app.services.slack.formatters import format_pr_notification
+        if payload["action"] in ("opened", "closed"):
+            action_label = "merged" if pr_data.get("merged") else payload["action"]
+            await send_slack_notification(
+                db, org_id=project.org_id, channel_type="project", project_id=project.id,
+                blocks=format_pr_notification(pr_data, action_label),
+                text=f"PR #{pr_data['number']} {action_label}: {pr_data['title']}",
+            )
+    except Exception:
+        pass
+
 
 async def handle_issues(db: AsyncSession, payload: dict) -> None:
     repo = payload.get("repository", {})
