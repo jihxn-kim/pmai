@@ -1,12 +1,17 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import api from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { CheckSquare, CalendarDays, AlertCircle } from "lucide-react";
+import { CheckSquare, CalendarDays, AlertCircle, Building2, Plus } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 
 interface Task {
@@ -112,12 +117,38 @@ function TaskRow({ task }: { task: Task }) {
 
 export default function MePage() {
   const { user } = useAuth();
+  const router = useRouter();
+  const [showCreateOrg, setShowCreateOrg] = useState(false);
+  const [orgName, setOrgName] = useState("");
+  const [orgSlug, setOrgSlug] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const { data: orgs } = useQuery({
+    queryKey: ["orgs"],
+    queryFn: () => api.get("/api/orgs").then((r) => r.data),
+    enabled: !!user,
+  });
 
   const { data, isLoading, isError } = useQuery<MyTasksResponse>({
     queryKey: ["my-tasks"],
     queryFn: () => api.get("/api/me/tasks").then((r) => r.data),
     enabled: !!user,
   });
+
+  const hasOrgs = Array.isArray(orgs) && orgs.length > 0;
+
+  const handleCreateOrg = async () => {
+    if (!orgName || !orgSlug) return;
+    setCreating(true);
+    try {
+      const resp = await api.post("/api/orgs", { name: orgName, slug: orgSlug });
+      router.push(`/org/${resp.data.slug}`);
+    } catch {
+      alert("조직 생성 실패");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const tasks: Task[] = Array.isArray(data?.items) ? data.items : [];
 
@@ -142,6 +173,40 @@ export default function MePage() {
           All your tasks across every project
         </p>
       </div>
+
+      {!hasOrgs && (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-10">
+            <Building2 className="size-12 text-muted-foreground/50" />
+            <div className="text-center">
+              <p className="font-medium">아직 조직이 없습니다</p>
+              <p className="text-sm text-muted-foreground mt-1">조직을 만들어서 프로젝트를 시작하세요</p>
+            </div>
+            {!showCreateOrg ? (
+              <Button onClick={() => setShowCreateOrg(true)}>
+                <Plus className="size-4 mr-2" /> 조직 만들기
+              </Button>
+            ) : (
+              <div className="flex flex-col gap-3 w-full max-w-sm">
+                <div>
+                  <Label>조직 이름</Label>
+                  <Input placeholder="예: 우리팀" value={orgName} onChange={(e) => { setOrgName(e.target.value); setOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")); }} />
+                </div>
+                <div>
+                  <Label>슬러그 (URL용)</Label>
+                  <Input placeholder="예: our-team" value={orgSlug} onChange={(e) => setOrgSlug(e.target.value)} />
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleCreateOrg} disabled={creating || !orgName || !orgSlug}>
+                    {creating ? "생성 중..." : "생성"}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowCreateOrg(false)}>취소</Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading && (
         <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
