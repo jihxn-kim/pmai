@@ -18,6 +18,7 @@ async def setup_db():
     import app.models.organization  # noqa: F401
     import app.models.project  # noqa: F401
     import app.models.task  # noqa: F401
+    import app.models.calendar  # noqa: F401
 
     engine = create_async_engine(TEST_DB_URL, echo=False)
 
