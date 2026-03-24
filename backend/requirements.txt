@@ -11,3 +11,5 @@ pytest==8.3.0
 pytest-asyncio==0.24.0
 claude-agent-sdk
 apscheduler>=3.10,<4.0
+slack-bolt>=1.18.0
+slack-sdk>=3.27.0

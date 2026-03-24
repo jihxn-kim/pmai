@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     ai_model: str = "claude-opus-4-6"
     ai_max_turns: int = 20
 
+    # Slack
+    slack_client_id: str = ""
+    slack_client_secret: str = ""
+    slack_signing_secret: str = ""
+
     model_config = {"env_file": ".env"}
 
 
