@@ -8,6 +8,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.task import Task, TaskPriority, TaskStatus
 
 
+async def after_task_change(db: AsyncSession, task: Task) -> None:
+    """Trigger Calendar and Notion sync after task create/update."""
+    try:
+        from app.services.calendar.sync import sync_task_to_calendar
+        await sync_task_to_calendar(db, task)
+    except Exception:
+        pass
+    try:
+        from app.services.notion.sync import sync_task_to_notion
+        await sync_task_to_notion(db, task, task.project_id)
+    except Exception:
+        pass
+
+
 async def create_task(
     db: AsyncSession,
     project_id: uuid.UUID,
@@ -28,6 +42,7 @@ async def create_task(
     db.add(task)
     await db.commit()
     await db.refresh(task)
+    await after_task_change(db, task)
     return task
 
 
@@ -95,6 +110,7 @@ async def update_task(
             setattr(task, key, value)
     await db.commit()
     await db.refresh(task)
+    await after_task_change(db, task)
     return task
 
 
