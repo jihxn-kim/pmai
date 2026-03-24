@@ -1,38 +1,73 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, FolderKanban, CheckSquare, Settings, ChevronDown } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LayoutDashboard, CheckSquare, Settings, ChevronDown, Plus, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOrgs } from "@/hooks/use-orgs";
+import { Button } from "@/components/ui/button";
 
 interface SidebarProps {
   orgSlug: string;
 }
 
-interface NavItem {
-  href: string;
-  label: string;
-  icon: React.ReactNode;
-}
-
 export function Sidebar({ orgSlug }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: orgs } = useOrgs();
 
-  const navItems: NavItem[] = [
+  const hasOrgs = Array.isArray(orgs) && orgs.length > 0;
+  const currentOrg = hasOrgs
+    ? orgs.find((o: { slug: string }) => o.slug === orgSlug)
+    : null;
+
+  // No org or no slug — show minimal sidebar
+  if (!hasOrgs || !orgSlug) {
+    return (
+      <aside className="flex h-full w-60 flex-col border-r bg-muted/20">
+        <div className="flex items-center gap-2 border-b px-4 py-3">
+          <Building2 className="size-4 text-muted-foreground" />
+          <span className="text-sm font-semibold text-muted-foreground">PM Agent</span>
+        </div>
+        <nav className="flex-1 space-y-1 p-3">
+          <Link
+            href="/me"
+            className={cn(
+              "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
+              pathname === "/me"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <CheckSquare className="size-4" />
+            My Tasks
+          </Link>
+        </nav>
+        {!hasOrgs && (
+          <div className="p-3 border-t">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => router.push("/me")}
+            >
+              <Plus className="size-4 mr-2" /> 조직 만들기
+            </Button>
+          </div>
+        )}
+      </aside>
+    );
+  }
+
+  // Has org — full navigation (only pages that exist)
+  const navItems = [
     {
       href: `/org/${orgSlug}`,
       label: "Dashboard",
       icon: <LayoutDashboard className="size-4" />,
     },
     {
-      href: `/org/${orgSlug}/projects`,
-      label: "Projects",
-      icon: <FolderKanban className="size-4" />,
-    },
-    {
-      href: `/org/${orgSlug}/tasks`,
+      href: "/me",
       label: "My Tasks",
       icon: <CheckSquare className="size-4" />,
     },
@@ -42,10 +77,6 @@ export function Sidebar({ orgSlug }: SidebarProps) {
       icon: <Settings className="size-4" />,
     },
   ];
-
-  const currentOrg = Array.isArray(orgs)
-    ? orgs.find((o: { slug: string }) => o.slug === orgSlug)
-    : null;
 
   return (
     <aside className="flex h-full w-60 flex-col border-r bg-muted/20">
@@ -67,7 +98,7 @@ export function Sidebar({ orgSlug }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-3">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || (item.href !== "/me" && pathname.startsWith(item.href + "/"));
           return (
             <Link
               key={item.href}
