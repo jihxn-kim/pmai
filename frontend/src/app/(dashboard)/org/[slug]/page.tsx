@@ -3,10 +3,12 @@
 import { use } from "react";
 import { useRouter } from "next/navigation";
 import { useOrgs, useOrgDashboard } from "@/hooks/use-orgs";
+import { useLatestBriefing } from "@/hooks/use-ai";
 import { ProjectCard, type ProjectSummary } from "@/components/org/project-card";
 import { ActivityFeed } from "@/components/org/activity-feed";
 import { Button } from "@/components/ui/button";
-import { Plus, FolderKanban } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Plus, FolderKanban, Newspaper, ArrowRight } from "lucide-react";
 
 interface OrgDashboardPageProps {
   params: Promise<{ slug: string }>;
@@ -28,6 +30,7 @@ export default function OrgDashboardPage({ params }: OrgDashboardPageProps) {
   const orgId = org?.id ?? "";
 
   const { data: dashboard, isLoading: dashboardLoading } = useOrgDashboard(orgId);
+  const { data: latestBriefing } = useLatestBriefing(orgId);
 
   const isLoading = orgsLoading || (!!orgId && dashboardLoading);
 
@@ -107,21 +110,75 @@ export default function OrgDashboardPage({ params }: OrgDashboardPageProps) {
             </div>
           </div>
 
-          {/* Activity feed */}
-          <div className="flex flex-col">
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Recent Activity
-            </h2>
-            {firstProjectId ? (
-              <ActivityFeed
-                projectId={firstProjectId}
-                className="max-h-[600px] rounded-xl border"
-              />
-            ) : (
-              <div className="flex items-center justify-center rounded-xl border py-8 text-sm text-muted-foreground">
-                No activity to show.
+          {/* Right column: Weekly Briefing + Activity */}
+          <div className="flex flex-col gap-6">
+            {/* Weekly Briefing card */}
+            <div>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  Weekly Briefing
+                </h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-xs"
+                  onClick={() => router.push(`/org/${slug}/briefings`)}
+                >
+                  View all
+                  <ArrowRight className="size-3" />
+                </Button>
               </div>
-            )}
+
+              {latestBriefing ? (
+                <Card
+                  className="cursor-pointer hover:ring-foreground/20 transition-all"
+                  onClick={() => router.push(`/org/${slug}/briefings`)}
+                >
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                      <Newspaper className="size-4" />
+                      {(latestBriefing as { week_label?: string; week_start?: string }).week_label ??
+                        ((latestBriefing as { week_start?: string }).week_start
+                          ? `Week of ${new Date((latestBriefing as { week_start: string }).week_start).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                          : "Latest Briefing")}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="line-clamp-3 text-sm text-muted-foreground">
+                      {(latestBriefing as { org_summary?: string }).org_summary ??
+                        "Click to view the full briefing."}
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div
+                  className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-6 hover:bg-muted/30 transition-colors"
+                  onClick={() => router.push(`/org/${slug}/briefings`)}
+                >
+                  <Newspaper className="size-8 text-muted-foreground/40" />
+                  <p className="text-xs text-muted-foreground">
+                    No briefing yet. Generate one.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Activity feed */}
+            <div className="flex flex-col">
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Recent Activity
+              </h2>
+              {firstProjectId ? (
+                <ActivityFeed
+                  projectId={firstProjectId}
+                  className="max-h-[600px] rounded-xl border"
+                />
+              ) : (
+                <div className="flex items-center justify-center rounded-xl border py-8 text-sm text-muted-foreground">
+                  No activity to show.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
