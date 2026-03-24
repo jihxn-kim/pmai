@@ -13,6 +13,7 @@ from app.routers import dashboard
 from app.routers import ai, briefings
 from app.routers import slack
 from app.routers import calendar
+from app.routers import notion
 
 try:
     from app.scheduler import scheduler
@@ -89,6 +90,7 @@ app.include_router(ai.router)
 app.include_router(briefings.router)
 app.include_router(slack.router)
 app.include_router(calendar.router)
+app.include_router(notion.router)
 
 
 @app.get("/api/health")

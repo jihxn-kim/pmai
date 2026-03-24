@@ -19,6 +19,13 @@ async def setup_db():
     import app.models.project  # noqa: F401
     import app.models.task  # noqa: F401
     import app.models.calendar  # noqa: F401
+    import app.models.notion  # noqa: F401
+    import app.models.slack  # noqa: F401
+    import app.models.activity_log  # noqa: F401
+    import app.models.pull_request  # noqa: F401
+    import app.models.ai_job_queue  # noqa: F401
+    import app.models.ai_review  # noqa: F401
+    import app.models.weekly_briefing  # noqa: F401
 
     engine = create_async_engine(TEST_DB_URL, echo=False)
 

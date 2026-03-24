@@ -106,3 +106,10 @@ async def renew_calendar_watches():
     pass  # TODO: implement when calendar watches are set up
 
 scheduler.add_job(renew_calendar_watches, CronTrigger(hour="*/6"))
+
+
+try:
+    from app.services.notion.sync import poll_notion_changes
+    scheduler.add_job(poll_notion_changes, CronTrigger(minute="*/5"))
+except ImportError:
+    pass
