@@ -9,12 +9,15 @@ import { cn } from "@/lib/utils";
 export interface ProjectSummary {
   id: string;
   name: string;
-  slug: string;
   status: "active" | "paused" | "done";
   member_count: number;
-  task_counts: {
-    total: number;
+  progress: {
+    todo: number;
+    in_progress: number;
+    review: number;
     done: number;
+    total: number;
+    progress: number;
   };
   org_slug: string;
 }
@@ -34,8 +37,10 @@ const statusConfig: Record<
 
 export function ProjectCard({ project }: ProjectCardProps) {
   const router = useRouter();
-  const { total, done } = project.task_counts;
-  const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+  const prog = project.progress ?? { total: 0, done: 0, progress: 0 };
+  const total = prog.total ?? 0;
+  const done = prog.done ?? 0;
+  const progressPct = prog.progress ?? (total > 0 ? Math.round((done / total) * 100) : 0);
   const { label, className } = statusConfig[project.status] ?? statusConfig.active;
 
   return (
@@ -56,31 +61,24 @@ export function ProjectCard({ project }: ProjectCardProps) {
           </span>
         </div>
       </CardHeader>
-
-      <CardContent className="space-y-3">
+      <CardContent>
         {/* Progress bar */}
-        <div>
-          <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-            <span>Progress</span>
-            <span>{progress}%</span>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{done}/{total} tasks</span>
+            <span>{progressPct}%</span>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary transition-all"
-              style={{ width: `${progress}%` }}
+              style={{ width: `${progressPct}%` }}
             />
           </div>
         </div>
       </CardContent>
-
       <CardFooter className="text-xs text-muted-foreground">
-        <div className="flex items-center gap-1">
-          <Users className="size-3.5" />
-          <span>{project.member_count} member{project.member_count !== 1 ? "s" : ""}</span>
-        </div>
-        <span className="ml-auto">
-          {done}/{total} tasks
-        </span>
+        <Users className="mr-1.5 size-3.5" />
+        {project.member_count} member{project.member_count !== 1 ? "s" : ""}
       </CardFooter>
     </Card>
   );
