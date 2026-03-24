@@ -90,6 +90,8 @@ async def test_webhook_pull_request_opened(
             "merged_at": None,
             "user": {"id": 99999, "login": "unknown-gh-user"},
             "requested_reviewers": [],
+            "base": {"ref": "main"},
+            "head": {"ref": "feature-branch"},
         },
         "repository": {
             "id": 99999,
