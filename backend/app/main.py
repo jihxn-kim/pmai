@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.routers import auth, orgs, projects, tasks
+from app.routers import github
 
 app = FastAPI(title="PM Agent API")
 
@@ -39,6 +40,7 @@ app.include_router(auth.router)
 app.include_router(orgs.router)
 app.include_router(projects.router)
 app.include_router(tasks.router)
+app.include_router(github.router)
 
 
 @app.get("/api/health")
