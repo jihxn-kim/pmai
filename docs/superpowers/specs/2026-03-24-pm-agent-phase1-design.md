@@ -88,6 +88,7 @@
 | owner_id | UUID | FK → User |
 | github_installation_id | INTEGER | GitHub App 설치 ID (nullable) |
 | created_at | TIMESTAMP | 생성일 |
+| updated_at | TIMESTAMP | 수정일 |
 
 ### OrgMember
 
@@ -97,6 +98,7 @@
 | user_id | UUID | PK (composite), FK → User |
 | role | ENUM | owner / admin / member |
 | created_at | TIMESTAMP | 가입일 |
+| updated_at | TIMESTAMP | 역할 변경일 |
 
 ### Project
 
@@ -108,7 +110,7 @@
 | description | TEXT | 설명 |
 | status | ENUM | active / paused / done |
 | github_repo_url | VARCHAR | GitHub 레포 URL |
-| github_repo_id | INTEGER | GitHub 레포 ID |
+| github_repo_id | INTEGER | GitHub 레포 ID (unique — 하나의 레포는 하나의 프로젝트에만 연결) |
 | start_date | DATE | 시작일 |
 | end_date | DATE | 종료 예정일 |
 | created_at | TIMESTAMP | 생성일 |
@@ -122,6 +124,7 @@
 | user_id | UUID | PK (composite), FK → User |
 | role | ENUM | lead / developer / reviewer |
 | created_at | TIMESTAMP | 배정일 |
+| updated_at | TIMESTAMP | 역할 변경일 |
 
 ### Task
 
@@ -227,7 +230,7 @@
 
 **필요 권한:**
 - Repository: read (코드, 이슈, PR)
-- Pull requests: read
+- Pull requests: read (PR review 이벤트 수신 포함)
 - Issues: read (Phase 1에서는 읽기만, Phase 2에서 write 권한 추가 요청)
 - Webhooks: 자동 등록
 
@@ -263,7 +266,7 @@
 
 ```
 GET    /api/auth/github               # GitHub OAuth 시작 (GitHub로 리다이렉트)
-POST   /api/auth/github/callback      # GitHub OAuth 콜백 → JWT 발급
+GET    /api/auth/github/callback      # GitHub OAuth 콜백 → JWT 발급 (GitHub이 GET으로 리다이렉트)
 POST   /api/auth/refresh              # access token 갱신
 POST   /api/auth/logout               # 로그아웃 (refresh token 삭제)
 GET    /api/auth/me                   # 현재 사용자 정보
@@ -277,7 +280,7 @@ POST   /api/orgs                              # 조직 생성
 GET    /api/orgs/{org_id}                     # 조직 정보
 PATCH  /api/orgs/{org_id}                     # 조직 수정
 GET    /api/orgs/{org_id}/members             # 멤버 목록
-POST   /api/orgs/{org_id}/members             # 멤버 초대
+POST   /api/orgs/{org_id}/members             # 멤버 추가 (github_username으로 직접 추가, 해당 유저가 플랫폼에 가입되어 있어야 함)
 DELETE /api/orgs/{org_id}/members/{user_id}   # 멤버 제거
 PATCH  /api/orgs/{org_id}/members/{user_id}   # 멤버 역할 변경
 ```
@@ -472,6 +475,7 @@ GET /api/projects/{id}/tasks?page=1&per_page=20&sort=created_at&order=desc
 - API 에러는 일관된 JSON 형식: `{ "error": { "code": "NOT_FOUND", "message": "..." } }`
 - HTTP 상태 코드 준수: 400 (잘못된 요청), 401 (미인증), 403 (권한 없음), 404 (없음)
 - GitHub webhook 실패 시 재시도 큐 (Phase 1에서는 단순 로그, Phase 3에서 큐 도입)
+- Rate limiting: Phase 1에서는 미적용. 프로덕션 배포 시 리버스 프록시(nginx/Caddy)에서 처리
 
 ---
 
