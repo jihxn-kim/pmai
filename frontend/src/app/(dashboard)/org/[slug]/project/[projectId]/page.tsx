@@ -1,12 +1,14 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProject } from "@/hooks/use-projects";
 import { OverviewTab } from "@/components/project/overview-tab";
 import { GitHubTab } from "@/components/project/github-tab";
 import { TeamTab } from "@/components/project/team-tab";
 import { IssuesTab } from "@/components/project/issues-tab";
+import { KanbanBoard } from "@/components/project/kanban-board";
+import { TaskModal } from "@/components/task/task-modal";
 import {
   Tabs,
   TabsList,
@@ -14,8 +16,7 @@ import {
   TabsContent,
 } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ProjectDetailPageProps {
@@ -45,6 +46,7 @@ const statusConfig: Record<
 export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const { slug, projectId } = use(params);
   const router = useRouter();
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
 
   const { data: project, isLoading, isError } = useProject(projectId);
 
@@ -129,8 +131,19 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
         </TabsContent>
 
         <TabsContent value="tasks">
-          <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
-            Kanban board coming soon
+          <div className="pt-4 flex flex-col gap-4">
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => setNewTaskOpen(true)}>
+                <Plus className="mr-1.5 size-4" />
+                New Task
+              </Button>
+            </div>
+            <KanbanBoard projectId={projectId} />
+            <TaskModal
+              projectId={projectId}
+              open={newTaskOpen}
+              onOpenChange={setNewTaskOpen}
+            />
           </div>
         </TabsContent>
 
