@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import api from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -118,6 +118,7 @@ function TaskRow({ task }: { task: Task }) {
 export default function MePage() {
   const { user } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [orgName, setOrgName] = useState("");
   const [orgSlug, setOrgSlug] = useState("");
@@ -142,6 +143,7 @@ export default function MePage() {
     setCreating(true);
     try {
       const resp = await api.post("/api/orgs", { name: orgName, slug: orgSlug });
+      await queryClient.invalidateQueries({ queryKey: ["orgs"] });
       router.push(`/org/${resp.data.slug}`);
     } catch {
       alert("조직 생성 실패");
