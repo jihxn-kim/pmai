@@ -17,6 +17,12 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:3000"
 
+    # AI Engine
+    anthropic_api_key: str = ""
+    ai_repo_base_path: str = "/tmp/pmai/repos"
+    ai_model: str = "claude-opus-4-6"
+    ai_max_turns: int = 20
+
     model_config = {"env_file": ".env"}
 
 
