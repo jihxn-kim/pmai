@@ -5,6 +5,8 @@ import { useMutation } from "@tanstack/react-query";
 import { useOrgs, useOrgMembers } from "@/hooks/use-orgs";
 import api from "@/lib/api";
 import { MemberList, type Member } from "@/components/org/member-list";
+import { SlackConnect } from "@/components/slack/slack-connect";
+import { UserMapping } from "@/components/slack/user-mapping";
 import {
   Card,
   CardHeader,
@@ -261,6 +263,43 @@ export default function OrgSettingsPage({ params }: OrgSettingsPageProps) {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Slack 연동 ── */}
+      <Separator />
+      <div>
+        <h2 className="text-xl font-semibold">Slack 연동</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Slack 워크스페이스를 연결하고 알림 채널을 설정합니다.
+        </p>
+      </div>
+
+      {orgId && (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Slack 연결</CardTitle>
+              <CardDescription>
+                Slack 워크스페이스를 연결하고 조직 기본 채널을 설정합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SlackConnect orgId={orgId} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>사용자 매핑</CardTitle>
+              <CardDescription>
+                조직 멤버와 Slack 사용자를 연결합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <UserMapping orgId={orgId} />
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
