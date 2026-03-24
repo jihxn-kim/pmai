@@ -123,7 +123,11 @@ npm run dev
 
 4. "Where can this GitHub App be installed?" → **Only on this account**
 
-5. 생성 후 받은 값들을 `.env`에 입력:
+5. **Private Key 생성**:
+   - 앱 설정 페이지 하단 "Private keys" → "Generate a private key" 클릭
+   - `.pem` 파일 다운로드됨
+
+6. 생성 후 받은 값들을 `.env`에 입력:
 
 ```env
 GITHUB_CLIENT_ID=앱의_Client_ID
@@ -133,7 +137,19 @@ GITHUB_APP_SLUG=앱_URL_슬러그 (github.com/settings/apps/여기 부분)
 NEXT_PUBLIC_GITHUB_CLIENT_ID=GITHUB_CLIENT_ID와_동일한_값
 ```
 
-6. **GitHub App 설치** (레포 접근 권한 부여):
+Private Key는 여러 줄이라 `.env`에 넣을 때 **따옴표로 감싸고 `\n`으로 변환**해야 합니다:
+
+```bash
+# .pem 파일을 .env용 한 줄 문자열로 변환
+awk '{printf "%s\\n", $0}' your-app.private-key.pem
+```
+
+출력된 값을 `.env`에 따옴표로 감싸서 입력:
+```env
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n"
+```
+
+7. **GitHub App 설치** (레포 접근 권한 부여):
    - 대시보드 Settings 페이지에서 "GitHub App 설치" 버튼 클릭
    - 또는 직접: `https://github.com/apps/{GITHUB_APP_SLUG}/installations/new`
    - 계정 선택 → 레포 선택 → Install
@@ -283,6 +299,38 @@ pmai/
 | Notion | `GET /api/orgs/{id}/notion/auth`, `POST /api/projects/{id}/notion/database` |
 
 전체 API 목록은 `http://localhost:8000/docs`에서 확인.
+
+---
+
+## 프로덕션 배포 시 변경사항
+
+배포할 때 GitHub App 자체를 다시 만들 필요는 없습니다. URL만 변경하면 됩니다:
+
+### GitHub App 설정 변경 (https://github.com/settings/apps/your-app)
+
+| 항목 | 로컬 | 프로덕션 |
+|------|------|---------|
+| Homepage URL | `http://localhost:3000` | `https://your-domain.com` |
+| Callback URL | `http://localhost:8000/api/auth/github/callback` | `https://api.your-domain.com/api/auth/github/callback` |
+| Setup URL | `http://localhost:8000/api/github/setup/callback` | `https://api.your-domain.com/api/github/setup/callback` |
+| Webhook URL | (비활성) | `https://api.your-domain.com/api/webhooks/github` |
+| Webhook active | 체크 해제 | **체크** (프로덕션에서는 활성화) |
+
+### `.env` 변경
+
+```env
+DATABASE_URL=postgresql+asyncpg://user:pass@db-host:5432/pmai
+FRONTEND_URL=https://your-domain.com
+GOOGLE_REDIRECT_URI=https://api.your-domain.com/api/calendar/oauth/callback
+NOTION_REDIRECT_URI=https://api.your-domain.com/api/notion/oauth/callback
+```
+
+### 기타 프로덕션 설정
+- JWT 쿠키의 `secure=True` 활성화 (HTTPS 필수)
+- `GITHUB_WEBHOOK_SECRET` 설정 (webhook 서명 검증)
+- Slack App의 Event URL과 Redirect URL도 프로덕션 도메인으로 변경
+- Google OAuth의 Authorized redirect URIs도 변경
+- Notion Integration의 Redirect URIs도 변경
 
 ---
 
