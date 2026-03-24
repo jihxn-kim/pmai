@@ -50,6 +50,8 @@ class PullRequest(Base):
     review_state: Mapped[ReviewState | None] = mapped_column(
         Enum(ReviewState, name="reviewstate"), nullable=True
     )
+    base_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    head_ref: Mapped[str | None] = mapped_column(String, nullable=True)
     merged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
