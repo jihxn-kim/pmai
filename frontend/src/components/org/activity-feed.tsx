@@ -52,12 +52,15 @@ function ActivityRow({ item }: { item: ActivityItem }) {
 }
 
 export function ActivityFeed({ projectId, className }: ActivityFeedProps) {
-  const { data, isLoading, isError } = useQuery<ActivityItem[]>({
+  const { data: rawData, isLoading, isError } = useQuery({
     queryKey: ["activity", projectId],
     queryFn: () =>
       api.get(`/api/projects/${projectId}/activity`).then((r) => r.data),
     enabled: !!projectId,
   });
+
+  // Backend returns {data: [...], next_cursor: ...} or just an array
+  const data: ActivityItem[] = Array.isArray(rawData) ? rawData : Array.isArray(rawData?.data) ? rawData.data : [];
 
   if (isLoading) {
     return (
