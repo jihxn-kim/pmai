@@ -1,7 +1,7 @@
 "use client";
 
-import { use, useState } from "react";
-import { useRouter } from "next/navigation";
+import { use, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useProject } from "@/hooks/use-projects";
 import { OverviewTab } from "@/components/project/overview-tab";
 import { GitHubTab } from "@/components/project/github-tab";
@@ -48,7 +48,13 @@ const statusConfig: Record<
 export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
   const { slug, projectId } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+
+  const currentTab = searchParams.get("tab") || "overview";
+  const setTab = useCallback((tab: string) => {
+    router.replace(`/org/${slug}/project/${projectId}?tab=${tab}`, { scroll: false });
+  }, [router, slug, projectId]);
 
   const { data: project, isLoading, isError } = useProject(projectId);
 
@@ -108,7 +114,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="overview">
+      <Tabs value={currentTab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
