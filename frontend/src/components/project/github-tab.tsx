@@ -2,6 +2,7 @@
 
 import { usePulls } from "@/hooks/use-github";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ReviewBadge } from "@/components/ai/review-badge";
 import { cn } from "@/lib/utils";
 import { ExternalLink, GitPullRequest } from "lucide-react";
 
@@ -129,6 +130,11 @@ export function GitHubTab({ projectId, repoUrl }: GitHubTabProps) {
                     </p>
                   )}
                 </div>
+
+                <ReviewBadge
+                  projectId={projectId}
+                  prId={String(pr.number)}
+                />
 
                 {prUrl && (
                   <a
