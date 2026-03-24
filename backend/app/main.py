@@ -7,6 +7,7 @@ from app.config import settings
 from app.routers import auth, orgs, projects, tasks
 from app.routers import github
 from app.routers import dashboard
+from app.routers import ai, briefings
 
 app = FastAPI(title="PM Agent API")
 
@@ -43,6 +44,8 @@ app.include_router(projects.router)
 app.include_router(tasks.router)
 app.include_router(github.router)
 app.include_router(dashboard.router)
+app.include_router(ai.router)
+app.include_router(briefings.router)
 
 
 @app.get("/api/health")
