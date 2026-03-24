@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -17,6 +18,10 @@ from app.schemas.project import (
     ProjectUpdate,
 )
 from app.services import project_service
+
+
+class GitHubConnect(BaseModel):
+    repo_url: str
 
 router = APIRouter(tags=["projects"])
 
@@ -163,3 +168,18 @@ async def update_project_member_role(
         db, project_id, user_id, body.role
     )
     return member
+
+
+@router.post(
+    "/api/projects/{project_id}/github",
+    response_model=ProjectResponse,
+)
+async def connect_github(
+    project_id: uuid.UUID,
+    body: GitHubConnect,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(require_project_role(ProjectRole.lead)),
+):
+    from app.services.github_service import connect_github_repo
+
+    return await connect_github_repo(db, project_id, body.repo_url)
