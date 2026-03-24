@@ -112,6 +112,7 @@ npm run dev
 | App name | PM Agent (아무 이름) |
 | Homepage URL | `http://localhost:3000` |
 | Callback URL | `http://localhost:8000/api/auth/github/callback` |
+| Setup URL | `http://localhost:8000/api/github/setup/callback` |
 | Webhook active | 체크 해제 (로컬 개발 시) |
 
 3. Permissions 설정:
@@ -128,10 +129,17 @@ npm run dev
 GITHUB_CLIENT_ID=앱의_Client_ID
 GITHUB_CLIENT_SECRET=Generate_a_new_client_secret_버튼으로_생성
 GITHUB_APP_ID=앱_설정_페이지_상단의_App_ID
+GITHUB_APP_SLUG=앱_URL_슬러그 (github.com/settings/apps/여기 부분)
 NEXT_PUBLIC_GITHUB_CLIENT_ID=GITHUB_CLIENT_ID와_동일한_값
 ```
 
-6. (선택) GitHub webhook을 로컬에서 받으려면 ngrok 필요:
+6. **GitHub App 설치** (레포 접근 권한 부여):
+   - 대시보드 Settings 페이지에서 "GitHub App 설치" 버튼 클릭
+   - 또는 직접: `https://github.com/apps/{GITHUB_APP_SLUG}/installations/new`
+   - 계정 선택 → 레포 선택 → Install
+   - 자동으로 대시보드로 돌아오면서 installation_id가 저장됨
+
+7. (선택) GitHub webhook을 로컬에서 받으려면 ngrok 필요:
 
 ```bash
 ngrok http 8000
