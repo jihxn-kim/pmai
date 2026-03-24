@@ -7,7 +7,7 @@ function CallbackHandler() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const token = searchParams.get("access_token");
+    const token = searchParams.get("token") || searchParams.get("access_token");
     if (token) {
       sessionStorage.setItem("access_token", token);
       window.location.href = "/";
