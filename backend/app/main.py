@@ -1,7 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi import Request
 
 from app.config import settings
 
@@ -16,9 +16,16 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"error": {"code": 422, "message": "Validation error", "detail": exc.errors()}},
+    )
+
+
 @app.exception_handler(Exception)
 async def structured_error_handler(request: Request, exc: Exception):
-    from fastapi.exceptions import HTTPException
     if isinstance(exc, HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
