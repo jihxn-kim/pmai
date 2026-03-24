@@ -93,3 +93,16 @@ async def check_deadline_reminders():
 
 # Register: every hour at :00
 scheduler.add_job(check_deadline_reminders, CronTrigger(minute=0))
+
+
+try:
+    from app.services.calendar.briefing import check_upcoming_meetings
+    scheduler.add_job(check_upcoming_meetings, CronTrigger(minute="*/15"))
+except ImportError:
+    pass
+
+
+async def renew_calendar_watches():
+    pass  # TODO: implement when calendar watches are set up
+
+scheduler.add_job(renew_calendar_watches, CronTrigger(hour="*/6"))
