@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
 
     # AI Engine
-    anthropic_api_key: str = ""
+    anthropic_api_key: str = ""  # Optional — only needed if using Anthropic API directly
     ai_repo_base_path: str = "/tmp/pmai/repos"
     ai_model: str = "claude-opus-4-6"
     ai_max_turns: int = 20

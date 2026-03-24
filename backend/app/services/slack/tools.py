@@ -7,7 +7,6 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.models.ai_job_queue import AIJobQueue, JobStatus, JobTrigger, JobType
 from app.models.project import Project
 from app.models.pull_request import PRState, PullRequest
@@ -15,13 +14,6 @@ from app.models.weekly_briefing import BriefingStatus, WeeklyBriefing
 from app.services import dashboard_service
 
 logger = logging.getLogger(__name__)
-
-try:
-    import anthropic as _anthropic
-    HAS_ANTHROPIC = True
-except ImportError:
-    _anthropic = None  # type: ignore[assignment]
-    HAS_ANTHROPIC = False
 
 # ---------------------------------------------------------------------------
 # Tool definitions
@@ -120,7 +112,7 @@ SLACK_TOOLS: list[dict] = [
 # ---------------------------------------------------------------------------
 
 async def parse_intent(user_message: str) -> dict:
-    """Call Claude Haiku with tool_use to parse the user's intent.
+    """Use Claude Agent SDK to parse user intent from natural language.
 
     Returns::
 
@@ -128,43 +120,57 @@ async def parse_intent(user_message: str) -> dict:
         or
         {"tool": None, "input": None, "text": <clarification string>}
     """
-    if not HAS_ANTHROPIC:
-        return {
-            "tool": None,
-            "input": None,
-            "text": "AI intent parsing is unavailable (anthropic package not installed).",
-        }
+    try:
+        from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+    except ImportError:
+        return {"tool": None, "input": None, "text": "AI 서비스를 사용할 수 없습니다."}
+
+    system_prompt = """You are a PM Agent assistant. Parse the user's request and respond with a JSON object indicating which action to take.
+
+Available actions:
+- get_project_status: requires project_name
+- get_my_tasks: no parameters needed
+- request_code_review: requires pr_number, optionally project_name
+- get_latest_briefing: no parameters needed
+- get_project_issues: requires project_name
+- run_project_analysis: requires project_name
+
+Respond ONLY with a JSON object in this format:
+{"tool": "action_name", "input": {"param": "value"}}
+
+If you can't determine the action, respond with:
+{"tool": null, "text": "clarification message"}"""
 
     try:
-        client = _anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        response = await client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=1024,
-            tools=SLACK_TOOLS,  # type: ignore[arg-type]
-            messages=[{"role": "user", "content": user_message}],
-            system=(
-                "You are a helpful project management assistant. "
-                "Use the provided tools to fulfil the user's request. "
-                "If the request is ambiguous or does not match any tool, "
-                "reply with a brief clarification message (no tool call)."
-            ),
-        )
+        result = None
+        async for message in query(
+            prompt=user_message,
+            options=ClaudeAgentOptions(
+                system_prompt=system_prompt,
+                max_turns=1,
+            )
+        ):
+            if isinstance(message, ResultMessage):
+                result = message.result
 
-        for block in response.content:
-            if block.type == "tool_use":
-                return {"tool": block.name, "input": block.input, "text": None}
+        if not result:
+            return {"tool": None, "input": None, "text": "요청을 이해하지 못했습니다."}
 
-        # No tool used — collect text response
-        text_parts = [b.text for b in response.content if hasattr(b, "text")]
+        import json
+        # Strip markdown code block if present
+        text = result.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+        parsed = json.loads(text)
         return {
-            "tool": None,
-            "input": None,
-            "text": " ".join(text_parts) if text_parts else "요청을 이해하지 못했습니다.",
+            "tool": parsed.get("tool"),
+            "input": parsed.get("input", {}),
+            "text": parsed.get("text"),
         }
-
-    except Exception as exc:
-        logger.warning("parse_intent failed: %s", exc)
-        return {"tool": None, "input": None, "text": f"오류가 발생했습니다: {exc}"}
+    except Exception as e:
+        return {"tool": None, "input": None, "text": f"요청 처리 중 오류가 발생했습니다: {str(e)[:100]}"}
 
 
 # ---------------------------------------------------------------------------
