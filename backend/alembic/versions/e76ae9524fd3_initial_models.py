@@ -172,4 +172,11 @@ def downgrade() -> None:
     op.drop_table('organizations')
     op.drop_index(op.f('ix_users_github_id'), table_name='users')
     op.drop_table('users')
+    op.execute("DROP TYPE IF EXISTS orgrole")
+    op.execute("DROP TYPE IF EXISTS projectstatus")
+    op.execute("DROP TYPE IF EXISTS projectrole")
+    op.execute("DROP TYPE IF EXISTS taskstatus")
+    op.execute("DROP TYPE IF EXISTS taskpriority")
+    op.execute("DROP TYPE IF EXISTS prstate")
+    op.execute("DROP TYPE IF EXISTS reviewstate")
     # ### end Alembic commands ###
