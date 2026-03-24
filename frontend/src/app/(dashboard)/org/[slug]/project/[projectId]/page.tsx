@@ -8,6 +8,7 @@ import { GitHubTab } from "@/components/project/github-tab";
 import { GitHubConnect } from "@/components/project/github-connect";
 import { TeamTab } from "@/components/project/team-tab";
 import { IssuesTab } from "@/components/project/issues-tab";
+import { AITab } from "@/components/project/ai-tab";
 import { KanbanBoard } from "@/components/project/kanban-board";
 import { TaskModal } from "@/components/task/task-modal";
 import {
@@ -114,6 +115,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
           <TabsTrigger value="github">GitHub</TabsTrigger>
           <TabsTrigger value="team">Team</TabsTrigger>
           <TabsTrigger value="issues">Issues</TabsTrigger>
+          <TabsTrigger value="ai">AI</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -159,6 +161,12 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
         <TabsContent value="issues">
           <div className="pt-4">
             <IssuesTab projectId={projectId} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="ai">
+          <div className="pt-4">
+            <AITab projectId={projectId} />
           </div>
         </TabsContent>
       </Tabs>
