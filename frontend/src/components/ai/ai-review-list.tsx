@@ -6,11 +6,12 @@ import { Brain } from "lucide-react";
 
 interface AIReview {
   id: string;
-  review_type: "code_review" | "analysis" | "test_scenario";
+  type?: "code_review" | "analysis" | "test_scenario";
+  review_type?: "code_review" | "analysis" | "test_scenario";
   summary?: string;
   status: string;
   created_at: string;
-  score?: number;
+  detail?: { text?: string };
 }
 
 interface AIReviewListProps {
@@ -83,7 +84,8 @@ export function AIReviewList({ projectId, onSelect }: AIReviewListProps) {
   return (
     <ul className="divide-y rounded-xl border">
       {reviews.map((review) => {
-        const type = typeConfig[review.review_type] ?? typeConfig.analysis;
+        const reviewType = review.type || review.review_type || "analysis";
+        const type = typeConfig[reviewType] ?? typeConfig.analysis;
         const isPending =
           review.status === "pending" || review.status === "running";
 
