@@ -62,8 +62,8 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
         repo_owner = parts[-2] if len(parts) >= 2 else ""
         repo_name = parts[-1] if len(parts) >= 1 else ""
 
-        # Build custom tools server — each tool opens its own DB session from the pool
-        pm_tools = build_pm_tools_server(str(project_id))
+        # Custom PM tools disabled for now — causes TaskGroup errors in Agent SDK
+        pm_tools = None
 
         # Use a queue so we can send heartbeats without interrupting the agent stream
         queue: asyncio.Queue = asyncio.Queue()
