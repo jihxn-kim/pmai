@@ -82,8 +82,9 @@ def cleanup_repo(project_id: str, job_id: str) -> None:
 async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> dict:
     """Invoke the Claude Agent SDK and return the parsed JSON result.
 
-    The agent is given read-only file-system tools so it can explore the repo
-    and produce a structured JSON response.
+    The Agent SDK uses anyio internally, which conflicts with FastAPI's asyncio
+    event loop when called via asyncio.create_task(). To avoid this, we run the
+    SDK in a separate thread with its own event loop using anyio.run().
 
     Raises:
         RuntimeError: if claude_agent_sdk is not installed.
@@ -95,21 +96,36 @@ async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> dic
             "Install it with: pip install claude-agent-sdk"
         )
 
-    options = ClaudeAgentOptions(
-        cwd=repo_path,
-        allowed_tools=["read_file", "list_directory", "search_files", "run_command"],
-        system_prompt=system_prompt,
-        model=settings.ai_model,
-        max_turns=settings.ai_max_turns,
-        permission_mode="bypassPermissions",
-    )
+    import asyncio
+    import concurrent.futures
 
-    raw_output: str | None = None
+    def _run_in_thread() -> str | None:
+        """Run Agent SDK in a new thread with its own event loop via anyio."""
+        import anyio
 
-    async for message in query(prompt=user_prompt, options=options):
-        if ResultMessage is not None and isinstance(message, ResultMessage):
-            raw_output = message.content
-            break
+        async def _inner() -> str | None:
+            options = ClaudeAgentOptions(
+                cwd=repo_path,
+                allowed_tools=["Read", "Glob", "Grep", "Bash"],
+                system_prompt=system_prompt,
+                model=settings.ai_model,
+                max_turns=settings.ai_max_turns,
+                permission_mode="bypassPermissions",
+            )
+
+            raw_output: str | None = None
+            async for message in query(prompt=user_prompt, options=options):
+                if ResultMessage is not None and isinstance(message, ResultMessage):
+                    raw_output = message.result if hasattr(message, 'result') else getattr(message, 'content', None)
+                    break
+            return raw_output
+
+        return anyio.run(_inner)
+
+    # Run in a separate thread so we don't conflict with FastAPI's event loop
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        raw_output = await loop.run_in_executor(pool, _run_in_thread)
 
     if raw_output is None:
         raise ValueError("Agent produced no ResultMessage output")
