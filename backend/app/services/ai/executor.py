@@ -164,12 +164,10 @@ async def run_agent_stream(
                 elif isinstance(content, str) and content:
                     last_text = content
 
-            # Yield progress for intermediate messages
+            # Yield progress only for meaningful messages (skip SystemMessage, UserMessage, RateLimitEvent)
             text = _extract_message_text(message)
             if text:
                 yield {"type": "progress", "message": text}
-            else:
-                yield {"type": "progress", "message": f"⏳ {msg_type}..."}
 
     except Exception as exc:
         yield {"type": "error", "message": str(exc)[:500]}
