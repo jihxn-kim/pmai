@@ -123,6 +123,19 @@ async def debug_sdk():
     import os
     info["has_anthropic_key"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
     info["has_claude_key"] = bool(os.environ.get("CLAUDE_API_KEY"))
+
+    # Direct CLI test
+    try:
+        result = subprocess.run(
+            ["claude", "-p", "say hello", "--output-format", "json", "--max-turns", "1"],
+            capture_output=True, text=True, timeout=30
+        )
+        info["cli_test_stdout"] = result.stdout[:500] if result.stdout else ""
+        info["cli_test_stderr"] = result.stderr[:500] if result.stderr else ""
+        info["cli_test_exit"] = result.returncode
+    except Exception as e:
+        info["cli_test"] = f"error: {e}"
+
     return info
 
 app.include_router(auth.router)
