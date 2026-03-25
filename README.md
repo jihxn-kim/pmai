@@ -334,6 +334,89 @@ NOTION_REDIRECT_URI=https://api.your-domain.com/api/notion/oauth/callback
 
 ---
 
+## Claude Agent SDK 참조 문서
+
+PM Agent의 AI 기능은 Claude Agent SDK를 사용합니다. 개발/커스터마이징 시 아래 공식 문서를 참고하세요.
+
+**공식 문서**: https://platform.claude.com/docs/en/agent-sdk
+
+| 페이지 | 설명 | URL |
+|--------|------|-----|
+| Overview | SDK 소개, 설치, 기본 사용법 | `/docs/en/agent-sdk/overview` |
+| Quickstart | 버그 수정 agent 만들기 튜토리얼 | `/docs/en/agent-sdk/quickstart` |
+| Streaming Output | 실시간 텍스트/도구 스트리밍 (`StreamEvent`, `include_partial_messages`) | `/docs/en/agent-sdk/streaming-output` |
+| Streaming vs Single Mode | 입력 모드 선택 (interactive vs one-shot) | `/docs/en/agent-sdk/streaming-vs-single-mode` |
+| Permissions | 도구 권한 제어 (`allowed_tools`, `permission_mode`) | `/docs/en/agent-sdk/permissions` |
+| Handle User Input | 사용자 승인/질문 처리 (`AskUserQuestion`) | `/docs/en/agent-sdk/user-input` |
+| Hooks | agent 라이프사이클 콜백 (`PreToolUse`, `PostToolUse`, `Stop` 등) | `/docs/en/agent-sdk/hooks` |
+| Subagents | 서브에이전트 정의 및 실행 | `/docs/en/agent-sdk/subagents` |
+| Sessions | 세션 유지/복원 (`resume`, `fork`) | `/docs/en/agent-sdk/sessions` |
+| MCP | Model Context Protocol 서버 연결 | `/docs/en/agent-sdk/mcp` |
+| Custom Tools | 커스텀 도구 생성 (`@tool`, `create_sdk_mcp_server`) | `/docs/en/agent-sdk/custom-tools` |
+| Structured Output | JSON 스키마 응답 (`output_format`) | `/docs/en/agent-sdk/structured-outputs` |
+| System Prompts | 시스템 프롬프트 수정, CLAUDE.md 활용 | `/docs/en/agent-sdk/modifying-system-prompts` |
+| Skills | 스킬 파일 정의 (`.claude/skills/`) | `/docs/en/agent-sdk/skills` |
+| Slash Commands | 커스텀 명령어 (`.claude/commands/`) | `/docs/en/agent-sdk/slash-commands` |
+| Plugins | 플러그인 확장 | `/docs/en/agent-sdk/plugins` |
+| Migration Guide | 이전 SDK에서 마이그레이션 | `/docs/en/agent-sdk/migration-guide` |
+
+### 주요 메시지 타입
+
+```
+┌──────────────────────┬──────────────────────────────────────────────┐
+│ 메시지 타입           │ 내용                                         │
+├──────────────────────┼──────────────────────────────────────────────┤
+│ SystemMessage        │ 세션 시작 (session_id 포함)                   │
+│ AssistantMessage     │ Claude의 응답 (thinking, text, tool_use 블록) │
+│ UserMessage          │ 도구 실행 결과 반환                           │
+│ ResultMessage        │ 최종 결과 (result 속성)                       │
+│ StreamEvent          │ 실시간 토큰 스트리밍 (partial_messages 활성화 시)│
+│ RateLimitEvent       │ API 속도 제한 상태 변경                       │
+└──────────────────────┴──────────────────────────────────────────────┘
+```
+
+### AssistantMessage content 블록
+
+```
+┌────────────────────┬────────────────────────────────────────────────┐
+│ 블록 타입           │ 내용                                           │
+├────────────────────┼────────────────────────────────────────────────┤
+│ thinking           │ Claude의 내부 사고 과정 (🧠)                    │
+│ text               │ 사용자에게 보여주는 설명/응답 (💬)              │
+│ tool_use           │ 도구 호출 — name, input 포함 (🔧)              │
+└────────────────────┴────────────────────────────────────────────────┘
+```
+
+### 실시간 스트리밍 (StreamEvent)
+
+`include_partial_messages=True` 설정 시 토큰 단위 스트리밍:
+
+```python
+from claude_agent_sdk import query, ClaudeAgentOptions
+from claude_agent_sdk.types import StreamEvent
+
+async for message in query(prompt="...", options=ClaudeAgentOptions(
+    include_partial_messages=True,
+    allowed_tools=["Read", "Bash"],
+)):
+    if isinstance(message, StreamEvent):
+        event = message.event
+        if event.get("type") == "content_block_delta":
+            delta = event.get("delta", {})
+            if delta.get("type") == "text_delta":
+                print(delta.get("text", ""), end="")  # 실시간 텍스트
+            elif delta.get("type") == "input_json_delta":
+                print(delta.get("partial_json", ""), end="")  # 도구 입력
+```
+
+### GitHub 저장소
+
+- Python SDK: https://github.com/anthropics/claude-agent-sdk-python
+- TypeScript SDK: https://github.com/anthropics/claude-agent-sdk-typescript
+- 예제 에이전트: https://github.com/anthropics/claude-agent-sdk-demos
+
+---
+
 ## 개발 Phase
 
 | Phase | 내용 | 상태 |
