@@ -56,41 +56,44 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
         )
         context = await build_project_context(db, project.id)
 
-        result_data = None
         async for event in stream_project_analysis(repo_path, context):
             if event["type"] == "progress":
                 yield f"data: {json.dumps(event)}\n\n"
             elif event["type"] == "heartbeat":
-                yield ": heartbeat\n\n"  # SSE comment — keeps connection alive
+                yield ": heartbeat\n\n"
             elif event["type"] == "result":
+                # Save immediately when result arrives
                 result_data = event["data"]
+                review = AIReview(
+                    project_id=project.id,
+                    type=AIReviewType.analysis,
+                    status=AIReviewStatus.completed,
+                    summary=result_data.get("progress_assessment", result_data.get("summary", "")),
+                    detail=result_data,
+                    suggestions=result_data.get("recommendations", []),
+                    requested_by=user_id,
+                    completed_at=datetime.now(timezone.utc),
+                )
+                db.add(review)
+                await db.flush()
+
+                job.status = JobStatus.completed
+                job.ai_review_id = review.id
+                job.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+
+                yield f"data: {json.dumps({'type': 'result', 'review_id': str(review.id)})}\n\n"
             elif event["type"] == "error":
+                job.status = JobStatus.failed
+                job.error_message = event["message"][:500]
+                await db.commit()
                 yield f"data: {json.dumps(event)}\n\n"
 
-        if result_data:
-            # Save review to DB
-            review = AIReview(
-                project_id=project.id,
-                type=AIReviewType.analysis,
-                status=AIReviewStatus.completed,
-                summary=result_data.get("progress_assessment", ""),
-                detail=result_data,
-                suggestions=result_data.get("recommendations", []),
-                requested_by=user_id,
-                completed_at=datetime.now(timezone.utc),
-            )
-            db.add(review)
-            await db.flush()
-
-            job.status = JobStatus.completed
-            job.ai_review_id = review.id
-            job.completed_at = datetime.now(timezone.utc)
-            await db.commit()
-
-            yield f"data: {json.dumps({'type': 'result', 'review_id': str(review.id)})}\n\n"
-        else:
+        # If loop ended without result or error, mark failed
+        await db.refresh(job)
+        if job.status == JobStatus.running:
             job.status = JobStatus.failed
-            job.error_message = "No result from agent"
+            job.error_message = "Stream ended without result"
             await db.commit()
             yield f"data: {json.dumps({'type': 'error', 'message': 'AI가 결과를 반환하지 않았습니다'})}\n\n"
 
