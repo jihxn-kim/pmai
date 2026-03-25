@@ -24,7 +24,6 @@ from app.schemas.ai import (
 )
 from app.services.ai.executor import stream_project_analysis
 from app.services.ai.custom_tools import build_pm_tools_server
-from app.services.ai.db_queries import execute_db_query
 from app.services.github_service import get_installation_token
 from app.services.ai.worker import build_project_context
 
@@ -66,11 +65,8 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
 
         context = await build_project_context(db, project.id)
 
-        # Build custom tools server so AI can query PM Agent DB directly
-        async def _db_query(query_name, params):
-            return await execute_db_query(db, query_name, {**params, "project_id": str(project_id)})
-
-        pm_tools = build_pm_tools_server(_db_query)
+        # Build custom tools server — each tool opens its own DB session from the pool
+        pm_tools = build_pm_tools_server(str(project_id))
 
         # Use a queue so we can send heartbeats without interrupting the agent stream
         queue: asyncio.Queue = asyncio.Queue()
