@@ -20,7 +20,7 @@ interface AIReviewListProps {
 }
 
 const typeConfig: Record<
-  AIReview["review_type"],
+  string,
   { label: string; className: string }
 > = {
   code_review: {
