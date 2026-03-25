@@ -143,6 +143,7 @@ async def run_agent_stream(
         "model": settings.ai_model,
         "max_turns": settings.ai_max_turns,
         "permission_mode": "bypassPermissions",
+        "include_partial_messages": True,
     }
     if cwd:
         options_kwargs["cwd"] = cwd
