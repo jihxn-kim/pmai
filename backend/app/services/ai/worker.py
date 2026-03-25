@@ -17,13 +17,12 @@ from app.models.pull_request import PullRequest
 from app.models.task import Task, TaskStatus
 from app.models.weekly_briefing import BriefingStatus, WeeklyBriefing
 from app.services.ai.executor import (
-    cleanup_repo,
-    clone_or_update_repo,
     run_code_review,
     run_project_analysis,
     run_test_generation,
     run_weekly_briefing,
 )
+from app.services.github_service import get_installation_token
 
 logger = logging.getLogger(__name__)
 
@@ -104,24 +103,30 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
         job.progress_log = [{"timestamp": datetime.now(timezone.utc).isoformat(), "message": "Job started"}]
         await db.commit()
 
-        repo_path = None
         try:
             project = await db.get(Project, job.project_id) if job.project_id else None
+
+            # Get GitHub token + parse owner/repo for MCP access
+            github_token = None
+            repo_owner, repo_name = "", ""
+            if project and project.github_repo_url:
+                org = await db.get(Organization, project.org_id)
+                if org and org.github_installation_id:
+                    try:
+                        github_token = await get_installation_token(org.github_installation_id)
+                    except Exception:
+                        pass
+                parts = project.github_repo_url.rstrip("/").split("/")
+                repo_owner = parts[-2] if len(parts) >= 2 else ""
+                repo_name = parts[-1] if len(parts) >= 1 else ""
 
             if job.job_type == JobType.code_review:
                 if not project or not project.github_repo_url:
                     raise ValueError("Project has no GitHub repo connected")
 
-                org = await db.get(Organization, project.org_id)
-                await _update_job_progress(job.id, "GitHub 레포를 클론하고 있습니다...")
-                repo_path = await clone_or_update_repo(
-                    project.id, job.id, project.github_repo_url,
-                    org.github_installation_id,
-                )
                 payload = job.payload
-                await _update_job_progress(job.id, f"PR #{payload['pr_number']} 코드리뷰를 시작합니다...")
                 result = await run_code_review(
-                    repo_path,
+                    github_token, repo_owner, repo_name,
                     payload["pr_number"],
                     payload["base"],
                     payload["head"],
@@ -191,16 +196,8 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 if not project or not project.github_repo_url:
                     raise ValueError("Project has no GitHub repo connected")
 
-                org = await db.get(Organization, project.org_id)
-                await _update_job_progress(job.id, "GitHub 레포를 클론하고 있습니다...")
-                repo_path = await clone_or_update_repo(
-                    project.id, job.id, project.github_repo_url,
-                    org.github_installation_id,
-                )
-                await _update_job_progress(job.id, "프로젝트 컨텍스트를 수집합니다...")
                 context = await build_project_context(db, project.id)
-                await _update_job_progress(job.id, "AI가 프로젝트를 분석 중입니다. git log, 태스크, PR을 확인합니다...")
-                result = await run_project_analysis(repo_path, context)
+                result = await run_project_analysis(github_token, repo_owner, repo_name, context)
                 await _update_job_progress(job.id, "분석 완료. 결과를 저장합니다...")
 
                 summary = result[:200] + "..." if len(result) > 200 else result
@@ -226,12 +223,6 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 if not project or not project.github_repo_url:
                     raise ValueError("Project has no GitHub repo connected")
 
-                org = await db.get(Organization, project.org_id)
-                await _update_job_progress(job.id, "GitHub 레포를 클론하고 있습니다...")
-                repo_path = await clone_or_update_repo(
-                    project.id, job.id, project.github_repo_url,
-                    org.github_installation_id,
-                )
                 payload = job.payload
                 pr = None
                 base, head = None, None
@@ -246,13 +237,11 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                     if pr:
                         base, head = pr.base_ref, pr.head_ref
 
-                await _update_job_progress(job.id, "AI가 테스트 시나리오를 생성 중입니다...")
                 result = await run_test_generation(
-                    repo_path,
+                    github_token, repo_owner, repo_name,
                     payload.get("pr_number"),
                     payload.get("file_paths"),
-                    base,
-                    head,
+                    base, head,
                 )
 
                 summary = result[:200] + "..." if len(result) > 200 else result
@@ -289,34 +278,34 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 )
                 projects = list(projects_result.scalars().all())
 
+                # Get GitHub token for this org
+                brief_token = None
+                if org.github_installation_id:
+                    try:
+                        brief_token = await get_installation_token(org.github_installation_id)
+                    except Exception:
+                        pass
+
                 project_briefings = []
                 for proj in projects:
-                    proj_repo_path = None
                     try:
-                        proj_repo_path = await clone_or_update_repo(
-                            proj.id, job.id, proj.github_repo_url,
-                            org.github_installation_id,
-                        )
+                        parts = (proj.github_repo_url or "").rstrip("/").split("/")
+                        p_owner = parts[-2] if len(parts) >= 2 else ""
+                        p_name = parts[-1] if len(parts) >= 1 else ""
                         context = await build_project_context(db, proj.id)
-                        brief = await run_weekly_briefing(proj_repo_path, context, on_progress=progress_cb)
-                        brief["project_id"] = str(proj.id)
-                        brief["project_name"] = proj.name
-                        project_briefings.append(brief)
+                        brief_text = await run_weekly_briefing(brief_token, p_owner, p_name, context)
+                        project_briefings.append({
+                            "project_id": str(proj.id),
+                            "project_name": proj.name,
+                            "summary": brief_text[:500],
+                        })
                     except Exception as proj_err:
-                        logger.warning(
-                            "Briefing failed for project %s: %s", proj.id, proj_err
-                        )
-                        project_briefings.append(
-                            {
-                                "project_id": str(proj.id),
-                                "project_name": proj.name,
-                                "summary": f"Failed to generate briefing: {str(proj_err)[:200]}",
-                                "completed_tasks": 0,
-                                "merged_prs": 0,
-                            }
-                        )
-                    finally:
-                        cleanup_repo(proj.id, job.id)
+                        logger.warning("Briefing failed for project %s: %s", proj.id, proj_err)
+                        project_briefings.append({
+                            "project_id": str(proj.id),
+                            "project_name": proj.name,
+                            "summary": f"Failed: {str(proj_err)[:200]}",
+                        })
 
                 # Monday of the current week
                 today = date.today()
@@ -375,11 +364,6 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 await asyncio.sleep(delay)
                 asyncio.create_task(process_ai_job(job.id))
                 return
-
-        finally:
-            # Briefing jobs clean up per-project inside the loop above
-            if repo_path and job.job_type != JobType.briefing and job.project_id:
-                cleanup_repo(job.project_id, job.id)
 
         await db.commit()
 
