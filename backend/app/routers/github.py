@@ -50,7 +50,7 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 # --- GitHub App Installation ---
 
 @router.get("/api/orgs/{org_id}/github/install")
-async def github_app_install(org_id: uuid.UUID, user: User = Depends(get_current_user)):
+async def github_app_install(org_id: uuid.UUID):
     """Redirect to GitHub App installation page."""
     if settings.github_app_slug:
         url = f"https://github.com/apps/{settings.github_app_slug}/installations/new?state={org_id}"
