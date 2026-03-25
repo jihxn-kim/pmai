@@ -119,11 +119,6 @@ export function AIReviewList({ projectId, onSelect }: AIReviewListProps) {
             </div>
 
             <div className="flex shrink-0 flex-col items-end gap-1">
-              {review.score != null && (
-                <span className="text-xs font-semibold text-foreground">
-                  {review.score}/10
-                </span>
-              )}
               <span className="text-xs text-muted-foreground">
                 {formatRelativeTime(review.created_at)}
               </span>
