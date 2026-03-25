@@ -1,4 +1,5 @@
 """Agent Executor: manages repo cloning and wraps Claude Agent SDK calls."""
+from __future__ import annotations
 
 import asyncio
 import json
@@ -6,6 +7,7 @@ import logging
 import os
 import re
 import shutil
+from typing import Callable
 
 from app.config import settings
 from app.services.github_service import get_installation_token
@@ -83,7 +85,7 @@ async def run_agent(
     repo_path: str,
     system_prompt: str,
     user_prompt: str,
-    on_progress: callable | None = None,
+    on_progress: Callable | None = None,
 ) -> dict:
     """Invoke the Claude Agent SDK and return the parsed JSON result.
 
@@ -192,7 +194,7 @@ async def run_code_review(
     pr_number: int,
     base: str,
     head: str,
-    on_progress: callable | None = None,
+    on_progress: Callable | None = None,
 ) -> dict:
     """Run a code review agent for the given PR diff."""
     user_prompt = (
@@ -224,7 +226,7 @@ async def run_test_generation(
     file_paths: list[str],
     base: str,
     head: str,
-    on_progress: callable | None = None,
+    on_progress: Callable | None = None,
 ) -> dict:
     """Generate test scenarios for the changed files in a PR."""
     files_list = "\n".join(f"- {p}" for p in file_paths)
