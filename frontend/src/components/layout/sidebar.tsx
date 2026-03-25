@@ -100,7 +100,7 @@ export function Sidebar({ orgSlug }: SidebarProps) {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-3">
         {navItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== "/me" && pathname.startsWith(item.href + "/"));
+          const isActive = pathname === item.href;
           return (
             <Link
               key={item.href}
