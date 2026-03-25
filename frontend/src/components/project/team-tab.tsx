@@ -99,11 +99,11 @@ export function TeamTab({ projectId }: TeamTabProps) {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {members.map((member) => {
+            {members.map((member, idx) => {
               const role =
                 roleConfig[member.role] ?? roleConfig.member;
               return (
-                <tr key={member.id} className="hover:bg-muted/30">
+                <tr key={member.user_id ?? member.id ?? idx} className="hover:bg-muted/30">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
                       <Avatar size="sm">
