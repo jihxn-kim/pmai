@@ -121,15 +121,14 @@ async def debug_sdk():
     except Exception as e:
         info["node"] = f"error: {e}"
     import os
+    info["has_anthropic_auth_token"] = bool(os.environ.get("ANTHROPIC_AUTH_TOKEN"))
     info["has_anthropic_key"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    info["has_claude_key"] = bool(os.environ.get("CLAUDE_API_KEY"))
 
     # Direct CLI test — bare mode, no tools, just echo
     try:
         result = subprocess.run(
             ["claude", "-p", "say hi", "--bare", "--max-turns", "1", "--output-format", "json"],
             capture_output=True, text=True, timeout=60,
-            env={**os.environ, "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", "")}
         )
         info["cli_test_stdout"] = result.stdout[:300] if result.stdout else ""
         info["cli_test_stderr"] = result.stderr[:300] if result.stderr else ""
