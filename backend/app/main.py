@@ -93,6 +93,31 @@ async def structured_error_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"error": {"code": 500, "message": "Internal server error"}})
 
 
+@app.get("/api/debug/sdk")
+async def debug_sdk():
+    """Temporary debug endpoint to check SDK status."""
+    import sys
+    info = {"python": sys.version}
+    try:
+        import claude_agent_sdk
+        info["sdk"] = "installed"
+        info["sdk_version"] = getattr(claude_agent_sdk, "__version__", "unknown")
+    except ImportError as e:
+        info["sdk"] = f"not installed: {e}"
+    try:
+        import subprocess
+        result = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5)
+        info["cli"] = result.stdout.strip() or result.stderr.strip()
+    except Exception as e:
+        info["cli"] = f"error: {e}"
+    try:
+        import subprocess
+        result = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5)
+        info["node"] = result.stdout.strip()
+    except Exception as e:
+        info["node"] = f"error: {e}"
+    return info
+
 app.include_router(auth.router)
 app.include_router(orgs.router)
 app.include_router(projects.router)
