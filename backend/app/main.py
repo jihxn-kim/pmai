@@ -124,15 +124,18 @@ async def debug_sdk():
     info["has_anthropic_key"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
     info["has_claude_key"] = bool(os.environ.get("CLAUDE_API_KEY"))
 
-    # Direct CLI test
+    # Direct CLI test — bare mode, no tools, just echo
     try:
         result = subprocess.run(
-            ["claude", "-p", "say hello", "--output-format", "json", "--max-turns", "1"],
-            capture_output=True, text=True, timeout=30
+            ["claude", "-p", "say hi", "--bare", "--max-turns", "1", "--output-format", "json"],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", "")}
         )
-        info["cli_test_stdout"] = result.stdout[:500] if result.stdout else ""
-        info["cli_test_stderr"] = result.stderr[:500] if result.stderr else ""
+        info["cli_test_stdout"] = result.stdout[:300] if result.stdout else ""
+        info["cli_test_stderr"] = result.stderr[:300] if result.stderr else ""
         info["cli_test_exit"] = result.returncode
+    except subprocess.TimeoutExpired:
+        info["cli_test"] = "timeout (60s)"
     except Exception as e:
         info["cli_test"] = f"error: {e}"
 
