@@ -144,6 +144,7 @@ async def run_agent_stream(
         "max_turns": settings.ai_max_turns,
         "permission_mode": "bypassPermissions",
         "include_partial_messages": True,
+        "debug_stderr": True,
     }
     if cwd:
         options_kwargs["cwd"] = cwd
@@ -189,9 +190,14 @@ async def run_agent_stream(
 
     except Exception as exc:
         import traceback
-        error_detail = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-500:]}"
+        error_detail = f"{type(exc).__name__}: {exc}"
+        # Try to get stderr from ProcessError
+        stderr_output = getattr(exc, 'stderr', None) or getattr(exc, 'error_output', None) or ""
+        if stderr_output:
+            error_detail += f"\nSTDERR: {stderr_output[:500]}"
+        error_detail += f"\n{traceback.format_exc()[-300:]}"
         logger.error("Agent SDK error: %s", error_detail)
-        yield {"type": "error", "message": error_detail[:800]}
+        yield {"type": "error", "message": error_detail[:1000]}
         return
 
     if raw_output is None and last_text:
