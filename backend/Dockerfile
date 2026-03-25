@@ -22,4 +22,8 @@ RUN pip install --no-cache-dir --upgrade mcp && \
 
 COPY . .
 
+# non-root 사용자 생성 (Claude Code CLI가 root에서 bypassPermissions 차단)
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
