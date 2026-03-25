@@ -14,6 +14,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# claude-agent-sdk 설치 후 FastAPI 호환 버전 복구
+RUN pip install --no-cache-dir "starlette>=0.37.2,<0.39.0" "fastapi==0.115.0"
+
 COPY . .
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
