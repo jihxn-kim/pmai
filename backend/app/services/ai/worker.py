@@ -92,20 +92,6 @@ async def _update_job_progress(job_id: uuid.UUID, message: str) -> None:
         pass  # Never fail the job because of progress logging
 
 
-def _make_progress_callback(job_id: uuid.UUID) -> callable:
-    """Create a thread-safe progress callback that updates the DB."""
-    import asyncio as _asyncio
-
-    def callback(message: str) -> None:
-        try:
-            loop = _asyncio.new_event_loop()
-            loop.run_until_complete(_update_job_progress(job_id, message))
-            loop.close()
-        except Exception:
-            pass
-
-    return callback
-
 
 async def process_ai_job(job_id: uuid.UUID) -> None:
     """Process a single AI job. Called as a background task via asyncio.create_task."""
@@ -119,7 +105,6 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
         await db.commit()
 
         repo_path = None
-        progress_cb = _make_progress_callback(job.id)
         try:
             project = await db.get(Project, job.project_id) if job.project_id else None
 
@@ -128,18 +113,20 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                     raise ValueError("Project has no GitHub repo connected")
 
                 org = await db.get(Organization, project.org_id)
+                await _update_job_progress(job.id, "GitHub 레포를 클론하고 있습니다...")
                 repo_path = await clone_or_update_repo(
                     project.id, job.id, project.github_repo_url,
                     org.github_installation_id,
                 )
                 payload = job.payload
+                await _update_job_progress(job.id, f"PR #{payload['pr_number']} 코드리뷰를 시작합니다...")
                 result = await run_code_review(
                     repo_path,
                     payload["pr_number"],
                     payload["base"],
                     payload["head"],
-                    on_progress=progress_cb,
                 )
+                await _update_job_progress(job.id, "코드리뷰 완료. 결과를 저장합니다...")
 
                 # Find the associated PR record
                 pr_result = await db.execute(
@@ -204,12 +191,16 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                     raise ValueError("Project has no GitHub repo connected")
 
                 org = await db.get(Organization, project.org_id)
+                await _update_job_progress(job.id, "GitHub 레포를 클론하고 있습니다...")
                 repo_path = await clone_or_update_repo(
                     project.id, job.id, project.github_repo_url,
                     org.github_installation_id,
                 )
+                await _update_job_progress(job.id, "프로젝트 컨텍스트를 수집합니다...")
                 context = await build_project_context(db, project.id)
-                result = await run_project_analysis(repo_path, context, on_progress=progress_cb)
+                await _update_job_progress(job.id, "AI가 프로젝트를 분석 중입니다. git log, 태스크, PR을 확인합니다...")
+                result = await run_project_analysis(repo_path, context)
+                await _update_job_progress(job.id, "분석 완료. 결과를 저장합니다...")
 
                 review = AIReview(
                     project_id=project.id,
@@ -234,6 +225,7 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                     raise ValueError("Project has no GitHub repo connected")
 
                 org = await db.get(Organization, project.org_id)
+                await _update_job_progress(job.id, "GitHub 레포를 클론하고 있습니다...")
                 repo_path = await clone_or_update_repo(
                     project.id, job.id, project.github_repo_url,
                     org.github_installation_id,
@@ -252,13 +244,13 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                     if pr:
                         base, head = pr.base_ref, pr.head_ref
 
+                await _update_job_progress(job.id, "AI가 테스트 시나리오를 생성 중입니다...")
                 result = await run_test_generation(
                     repo_path,
                     payload.get("pr_number"),
                     payload.get("file_paths"),
                     base,
                     head,
-                    on_progress=progress_cb,
                 )
 
                 review = AIReview(

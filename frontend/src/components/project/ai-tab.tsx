@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useRequestAnalysis,
   useRequestTestScenarios,
@@ -60,8 +61,23 @@ export function AITab({ projectId }: AITabProps) {
     setFilePaths("");
   };
 
+  const queryClient = useQueryClient();
+  const prevStatus = useRef<string | null>(null);
+
   const isJobRunning =
-    jobStatus?.status === "pending" || jobStatus?.status === "running";
+    jobStatus?.status === "queued" || jobStatus?.status === "running";
+
+  // Auto-refresh reviews when job completes
+  useEffect(() => {
+    if (prevStatus.current && !["completed", "failed"].includes(prevStatus.current)) {
+      if (jobStatus?.status === "completed" || jobStatus?.status === "failed") {
+        queryClient.invalidateQueries({ queryKey: ["ai-reviews", projectId] });
+        // Clear active job after a brief delay so user sees the completion
+        setTimeout(() => setActiveJobId(null), 2000);
+      }
+    }
+    prevStatus.current = jobStatus?.status ?? null;
+  }, [jobStatus?.status, projectId, queryClient]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -94,6 +110,19 @@ export function AITab({ projectId }: AITabProps) {
           Generate Tests
         </Button>
       </div>
+
+      {/* Job completed notification */}
+      {activeJobId && jobStatus?.status === "completed" && (
+        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+          AI 분석이 완료되었습니다.
+        </div>
+      )}
+
+      {activeJobId && jobStatus?.status === "failed" && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+          AI 분석이 실패했습니다: {jobStatus.error_message || "알 수 없는 오류"}
+        </div>
+      )}
 
       {/* Running job status with progress log */}
       {isJobRunning && activeJobId && (
