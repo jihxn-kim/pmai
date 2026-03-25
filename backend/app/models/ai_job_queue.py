@@ -43,6 +43,7 @@ class AIJobQueue(Base):
     ai_review_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ai_reviews.id"), nullable=True)
     briefing_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("weekly_briefings.id"), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    progress_log: Mapped[list] = mapped_column(JSONB, default=list)  # [{timestamp, message, type}]
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -71,6 +71,42 @@ async def build_project_context(db: AsyncSession, project_id: uuid.UUID) -> str:
     return "\n".join(context_parts)
 
 
+async def _update_job_progress(job_id: uuid.UUID, message: str) -> None:
+    """Append a progress entry to the job's progress_log in the DB."""
+    try:
+        async with async_session() as db:
+            job = await db.get(AIJobQueue, job_id)
+            if job:
+                entry = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "message": message[:300],
+                }
+                log = list(job.progress_log or [])
+                log.append(entry)
+                # Keep only last 50 entries
+                if len(log) > 50:
+                    log = log[-50:]
+                job.progress_log = log
+                await db.commit()
+    except Exception:
+        pass  # Never fail the job because of progress logging
+
+
+def _make_progress_callback(job_id: uuid.UUID) -> callable:
+    """Create a thread-safe progress callback that updates the DB."""
+    import asyncio as _asyncio
+
+    def callback(message: str) -> None:
+        try:
+            loop = _asyncio.new_event_loop()
+            loop.run_until_complete(_update_job_progress(job_id, message))
+            loop.close()
+        except Exception:
+            pass
+
+    return callback
+
+
 async def process_ai_job(job_id: uuid.UUID) -> None:
     """Process a single AI job. Called as a background task via asyncio.create_task."""
     async with async_session() as db:
@@ -79,9 +115,11 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
             return
 
         job.status = JobStatus.running
+        job.progress_log = [{"timestamp": datetime.now(timezone.utc).isoformat(), "message": "Job started"}]
         await db.commit()
 
         repo_path = None
+        progress_cb = _make_progress_callback(job.id)
         try:
             project = await db.get(Project, job.project_id) if job.project_id else None
 
@@ -100,6 +138,7 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                     payload["pr_number"],
                     payload["base"],
                     payload["head"],
+                    on_progress=progress_cb,
                 )
 
                 # Find the associated PR record
@@ -170,7 +209,7 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                     org.github_installation_id,
                 )
                 context = await build_project_context(db, project.id)
-                result = await run_project_analysis(repo_path, context)
+                result = await run_project_analysis(repo_path, context, on_progress=progress_cb)
 
                 review = AIReview(
                     project_id=project.id,
@@ -219,6 +258,7 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                     payload.get("file_paths"),
                     base,
                     head,
+                    on_progress=progress_cb,
                 )
 
                 review = AIReview(
@@ -263,7 +303,7 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                             org.github_installation_id,
                         )
                         context = await build_project_context(db, proj.id)
-                        brief = await run_weekly_briefing(proj_repo_path, context)
+                        brief = await run_weekly_briefing(proj_repo_path, context, on_progress=progress_cb)
                         brief["project_id"] = str(proj.id)
                         brief["project_name"] = proj.name
                         project_briefings.append(brief)

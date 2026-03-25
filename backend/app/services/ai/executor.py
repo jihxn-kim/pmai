@@ -79,16 +79,21 @@ def cleanup_repo(project_id: str, job_id: str) -> None:
         logger.warning("cleanup_repo: path does not exist: %s", repo_path)
 
 
-async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> dict:
+async def run_agent(
+    repo_path: str,
+    system_prompt: str,
+    user_prompt: str,
+    on_progress: callable | None = None,
+) -> dict:
     """Invoke the Claude Agent SDK and return the parsed JSON result.
 
     The Agent SDK uses anyio internally, which conflicts with FastAPI's asyncio
     event loop when called via asyncio.create_task(). To avoid this, we run the
     SDK in a separate thread with its own event loop using anyio.run().
 
-    Raises:
-        RuntimeError: if claude_agent_sdk is not installed.
-        ValueError: if the agent output cannot be parsed as JSON.
+    Args:
+        on_progress: optional callback(message_str) called with each intermediate
+                     agent message (tool use, thinking, etc.)
     """
     if query is None:
         raise RuntimeError(
@@ -98,6 +103,8 @@ async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> dic
 
     import asyncio
     import concurrent.futures
+
+    progress_log: list[str] = []
 
     def _run_in_thread() -> str | None:
         """Run Agent SDK in a new thread with its own event loop via anyio."""
@@ -118,6 +125,37 @@ async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> dic
                 if ResultMessage is not None and isinstance(message, ResultMessage):
                     raw_output = message.result if hasattr(message, 'result') else getattr(message, 'content', None)
                     break
+                else:
+                    # Capture intermediate messages for progress
+                    msg_type = type(message).__name__
+                    msg_text = ""
+                    if hasattr(message, 'content'):
+                        content = message.content
+                        if isinstance(content, list):
+                            for block in content:
+                                if hasattr(block, 'text'):
+                                    msg_text = block.text[:200]
+                                    break
+                                elif hasattr(block, 'name'):
+                                    # Tool use block
+                                    tool_input = getattr(block, 'input', {})
+                                    if isinstance(tool_input, dict):
+                                        file_path = tool_input.get('file_path') or tool_input.get('path') or tool_input.get('command', '')
+                                        msg_text = f"Tool: {block.name} → {str(file_path)[:100]}"
+                                    else:
+                                        msg_text = f"Tool: {block.name}"
+                                    break
+                        elif isinstance(content, str):
+                            msg_text = content[:200]
+                    if not msg_text:
+                        msg_text = str(message)[:200]
+
+                    progress_log.append(f"[{msg_type}] {msg_text}")
+                    if on_progress and progress_log:
+                        try:
+                            on_progress(progress_log[-1])
+                        except Exception:
+                            pass
             return raw_output
 
         return anyio.run(_inner)
@@ -154,6 +192,7 @@ async def run_code_review(
     pr_number: int,
     base: str,
     head: str,
+    on_progress: callable | None = None,
 ) -> dict:
     """Run a code review agent for the given PR diff."""
     user_prompt = (
@@ -164,10 +203,10 @@ async def run_code_review(
         f"affected files in detail. Produce a thorough review according to the "
         f"instructions in your system prompt and return the result as a JSON object."
     )
-    return await run_agent(repo_path, CODE_REVIEWER_PROMPT, user_prompt)
+    return await run_agent(repo_path, CODE_REVIEWER_PROMPT, user_prompt, on_progress)
 
 
-async def run_project_analysis(repo_path: str, context: dict) -> dict:
+async def run_project_analysis(repo_path: str, context: dict, on_progress: callable | None = None) -> dict:
     """Run a project analysis agent using the supplied context payload."""
     user_prompt = (
         "Analyse the current state of this project.\n\n"
@@ -176,7 +215,7 @@ async def run_project_analysis(repo_path: str, context: dict) -> dict:
         "relevant repository information you need, then return the analysis as "
         "a JSON object."
     )
-    return await run_agent(repo_path, PROJECT_ANALYST_PROMPT, user_prompt)
+    return await run_agent(repo_path, PROJECT_ANALYST_PROMPT, user_prompt, on_progress)
 
 
 async def run_test_generation(
@@ -185,6 +224,7 @@ async def run_test_generation(
     file_paths: list[str],
     base: str,
     head: str,
+    on_progress: callable | None = None,
 ) -> dict:
     """Generate test scenarios for the changed files in a PR."""
     files_list = "\n".join(f"- {p}" for p in file_paths)
@@ -197,10 +237,10 @@ async def run_test_generation(
         f"what each change does. Then produce comprehensive test scenarios according "
         f"to the instructions in your system prompt and return the result as a JSON object."
     )
-    return await run_agent(repo_path, TEST_GENERATOR_PROMPT, user_prompt)
+    return await run_agent(repo_path, TEST_GENERATOR_PROMPT, user_prompt, on_progress)
 
 
-async def run_weekly_briefing(repo_path: str, context: dict) -> dict:
+async def run_weekly_briefing(repo_path: str, context: dict, on_progress: callable | None = None) -> dict:
     """Generate a weekly project briefing using the supplied context payload."""
     user_prompt = (
         "Generate a weekly briefing for this project.\n\n"
@@ -208,4 +248,4 @@ async def run_weekly_briefing(repo_path: str, context: dict) -> dict:
         "Also examine recent git history (`git log --oneline --since='7 days ago'`) "
         "for additional context, then return the briefing as a JSON object."
     )
-    return await run_agent(repo_path, WEEKLY_BRIEFING_PROMPT, user_prompt)
+    return await run_agent(repo_path, WEEKLY_BRIEFING_PROMPT, user_prompt, on_progress)

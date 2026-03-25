@@ -95,11 +95,25 @@ export function AITab({ projectId }: AITabProps) {
         </Button>
       </div>
 
-      {/* Running job status */}
+      {/* Running job status with progress log */}
       {isJobRunning && activeJobId && (
-        <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
-          <Loader2 className="size-4 animate-spin" />
-          <span>AI job running... ({jobStatus.status})</span>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 border-b border-blue-200 dark:border-blue-800">
+            <Loader2 className="size-4 animate-spin" />
+            <span>AI가 분석 중입니다...</span>
+          </div>
+          {jobStatus?.progress_log && jobStatus.progress_log.length > 0 && (
+            <div className="max-h-48 overflow-y-auto px-3 py-2 space-y-1 font-mono text-xs text-blue-600 dark:text-blue-400">
+              {(jobStatus.progress_log as Array<{timestamp: string; message: string}>).slice(-15).map((entry, i) => (
+                <div key={i} className="flex gap-2">
+                  <span className="text-blue-400 dark:text-blue-600 shrink-0">
+                    {new Date(entry.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                  <span className="truncate">{entry.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

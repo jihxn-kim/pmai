@@ -19,6 +19,7 @@ class JobStatusResponse(BaseModel):
     ai_review_id: uuid.UUID | None
     briefing_id: uuid.UUID | None
     error_message: str | None
+    progress_log: list | None = None
     created_at: datetime
     completed_at: datetime | None
     model_config = {"from_attributes": True}
