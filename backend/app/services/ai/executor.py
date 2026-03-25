@@ -1,4 +1,8 @@
-"""Agent Executor: manages repo cloning and wraps Claude Agent SDK calls."""
+"""Agent Executor: manages repo cloning and wraps Claude Agent SDK calls.
+
+Uses SSE streaming — the run_agent_stream() async generator yields progress
+messages as they arrive, then yields the final parsed JSON result.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +11,7 @@ import logging
 import os
 import re
 import shutil
-from typing import Callable
+from typing import AsyncGenerator
 
 from app.config import settings
 from app.services.github_service import get_installation_token
@@ -19,11 +23,12 @@ from app.services.ai.prompts import (
 )
 
 try:
-    from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+    from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage, AssistantMessage
 except ImportError:
     query = None
     ClaudeAgentOptions = None
     ResultMessage = None
+    AssistantMessage = None
 
 logger = logging.getLogger(__name__)
 
@@ -34,40 +39,25 @@ async def clone_or_update_repo(
     repo_url: str,
     installation_id: int,
 ) -> str:
-    """Clone the repo to an isolated directory for this job and return the path.
-
-    Uses a shallow clone (--depth 50) with an embedded installation token so
-    the subprocess never needs separate credential storage.
-    """
+    """Clone the repo to an isolated directory for this job and return the path."""
     token = await get_installation_token(installation_id)
-
-    # Embed token into the HTTPS URL: https://x-access-token:<token>@github.com/...
     authenticated_url = repo_url.replace("https://", f"https://x-access-token:{token}@")
 
     repo_path = os.path.join(settings.ai_repo_base_path, str(project_id), str(job_id))
+    if os.path.exists(repo_path):
+        shutil.rmtree(repo_path)
     os.makedirs(repo_path, exist_ok=True)
 
-    logger.info("Cloning repo %s to %s", repo_url, repo_path)
-
     proc = await asyncio.create_subprocess_exec(
-        "git",
-        "clone",
-        "--depth",
-        "50",
-        authenticated_url,
-        repo_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        "git", "clone", "--depth", "50", authenticated_url, repo_path,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    _, stderr = await proc.communicate()
 
     if proc.returncode != 0:
-        err_msg = stderr.decode(errors="replace").strip()
-        # Scrub the token from error messages before logging/raising
-        err_msg = err_msg.replace(token, "<token>")
-        raise RuntimeError(f"git clone failed (exit {proc.returncode}): {err_msg}")
+        err_msg = stderr.decode(errors="replace").strip().replace(token, "<token>")
+        raise RuntimeError(f"git clone failed: {err_msg}")
 
-    logger.info("Repo cloned successfully to %s", repo_path)
     return repo_path
 
 
@@ -75,179 +65,164 @@ def cleanup_repo(project_id: str, job_id: str) -> None:
     """Remove the job-specific repo directory."""
     repo_path = os.path.join(settings.ai_repo_base_path, str(project_id), str(job_id))
     if os.path.exists(repo_path):
-        shutil.rmtree(repo_path)
-        logger.info("Cleaned up repo directory %s", repo_path)
-    else:
-        logger.warning("cleanup_repo: path does not exist: %s", repo_path)
+        shutil.rmtree(repo_path, ignore_errors=True)
 
 
-async def run_agent(
+def _extract_message_text(message) -> str | None:
+    """Extract human-readable text from an Agent SDK message."""
+    if not hasattr(message, "content"):
+        return None
+
+    content = message.content
+    if isinstance(content, str):
+        return content[:300]
+    if isinstance(content, list):
+        for block in content:
+            if hasattr(block, "name"):
+                # Tool use block
+                tool_input = getattr(block, "input", {})
+                if isinstance(tool_input, dict):
+                    path = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("command", "")
+                    return f"🔧 {block.name} → {str(path)[:150]}"
+                return f"🔧 {block.name}"
+            if hasattr(block, "text") and block.text:
+                return f"💬 {block.text[:300]}"
+    return None
+
+
+async def run_agent_stream(
     repo_path: str,
     system_prompt: str,
     user_prompt: str,
-    on_progress: Callable | None = None,
-) -> dict:
-    """Invoke the Claude Agent SDK and return the parsed JSON result.
+) -> AsyncGenerator[dict, None]:
+    """Async generator that yields progress events then the final result.
 
-    The Agent SDK uses anyio internally, which conflicts with FastAPI's asyncio
-    event loop when called via asyncio.create_task(). To avoid this, we run the
-    SDK in a separate thread with its own event loop using anyio.run().
-
-    Args:
-        on_progress: optional callback(message_str) called with each intermediate
-                     agent message (tool use, thinking, etc.)
+    Yields dicts with:
+      {"type": "progress", "message": "..."}
+      {"type": "result", "data": {...parsed JSON...}}
+      {"type": "error", "message": "..."}
     """
     if query is None:
-        raise RuntimeError(
-            "claude_agent_sdk is not installed. "
-            "Install it with: pip install claude-agent-sdk"
-        )
+        yield {"type": "error", "message": "claude-agent-sdk is not installed"}
+        return
 
-    import asyncio
-    import concurrent.futures
+    options = ClaudeAgentOptions(
+        cwd=repo_path,
+        allowed_tools=["Read", "Glob", "Grep", "Bash"],
+        system_prompt=system_prompt,
+        model=settings.ai_model,
+        max_turns=settings.ai_max_turns,
+        permission_mode="bypassPermissions",
+    )
 
-    progress_log: list[str] = []
+    raw_output = None
+    try:
+        async for message in query(prompt=user_prompt, options=options):
+            if ResultMessage is not None and isinstance(message, ResultMessage):
+                raw_output = message.result if hasattr(message, "result") else getattr(message, "content", None)
+                break
 
-    def _run_in_thread() -> str | None:
-        """Run Agent SDK in a new thread with its own event loop via anyio."""
-        import anyio
+            # Yield progress for intermediate messages
+            text = _extract_message_text(message)
+            if text:
+                yield {"type": "progress", "message": text}
 
-        async def _inner() -> str | None:
-            options = ClaudeAgentOptions(
-                cwd=repo_path,
-                allowed_tools=["Read", "Glob", "Grep", "Bash"],
-                system_prompt=system_prompt,
-                model=settings.ai_model,
-                max_turns=settings.ai_max_turns,
-                permission_mode="bypassPermissions",
-            )
-
-            raw_output: str | None = None
-            async for message in query(prompt=user_prompt, options=options):
-                if ResultMessage is not None and isinstance(message, ResultMessage):
-                    raw_output = message.result if hasattr(message, 'result') else getattr(message, 'content', None)
-                    break
-                else:
-                    # Capture intermediate messages for progress
-                    msg_type = type(message).__name__
-                    msg_text = ""
-                    if hasattr(message, 'content'):
-                        content = message.content
-                        if isinstance(content, list):
-                            for block in content:
-                                if hasattr(block, 'text'):
-                                    msg_text = block.text[:200]
-                                    break
-                                elif hasattr(block, 'name'):
-                                    # Tool use block
-                                    tool_input = getattr(block, 'input', {})
-                                    if isinstance(tool_input, dict):
-                                        file_path = tool_input.get('file_path') or tool_input.get('path') or tool_input.get('command', '')
-                                        msg_text = f"Tool: {block.name} → {str(file_path)[:100]}"
-                                    else:
-                                        msg_text = f"Tool: {block.name}"
-                                    break
-                        elif isinstance(content, str):
-                            msg_text = content[:200]
-                    if not msg_text:
-                        msg_text = str(message)[:200]
-
-                    progress_log.append(f"[{msg_type}] {msg_text}")
-                    if on_progress and progress_log:
-                        try:
-                            on_progress(progress_log[-1])
-                        except Exception:
-                            pass
-            return raw_output
-
-        return anyio.run(_inner)
-
-    # Run in a separate thread so we don't conflict with FastAPI's event loop
-    loop = asyncio.get_event_loop()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        raw_output = await loop.run_in_executor(pool, _run_in_thread)
+    except Exception as exc:
+        yield {"type": "error", "message": str(exc)[:500]}
+        return
 
     if raw_output is None:
-        raise ValueError("Agent produced no ResultMessage output")
+        yield {"type": "error", "message": "Agent produced no output"}
+        return
 
-    # Strip optional markdown code-block wrapper: ```json ... ```
+    # Parse JSON from result
     stripped = raw_output.strip()
     match = re.search(r"```(?:json)?\s*([\s\S]*?)```", stripped)
     if match:
         stripped = match.group(1).strip()
 
     try:
-        return json.loads(stripped)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Agent output could not be parsed as JSON: {exc}\nRaw output:\n{raw_output}"
-        ) from exc
+        parsed = json.loads(stripped)
+        yield {"type": "result", "data": parsed}
+    except json.JSONDecodeError:
+        # Return raw text as result if not JSON
+        yield {"type": "result", "data": {"summary": raw_output[:2000]}}
+
+
+# ---------------------------------------------------------------------------
+# Non-streaming wrapper (for backward compat with worker/webhooks)
+# ---------------------------------------------------------------------------
+
+async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> dict:
+    """Run agent and return only the final result dict."""
+    async for event in run_agent_stream(repo_path, system_prompt, user_prompt):
+        if event["type"] == "result":
+            return event["data"]
+        if event["type"] == "error":
+            raise RuntimeError(event["message"])
+    raise ValueError("Agent stream ended without result")
 
 
 # ---------------------------------------------------------------------------
 # High-level task runners
 # ---------------------------------------------------------------------------
 
-
-async def run_code_review(
-    repo_path: str,
-    pr_number: int,
-    base: str,
-    head: str,
-    on_progress: Callable | None = None,
-) -> dict:
-    """Run a code review agent for the given PR diff."""
+async def run_code_review(repo_path: str, pr_number: int, base: str, head: str) -> dict:
     user_prompt = (
         f"Review PR #{pr_number}.\n"
-        f"Base branch: {base}\n"
-        f"Head branch: {head}\n\n"
-        f"Run `git diff {base}...{head}` to see the changes, then examine the "
-        f"affected files in detail. Produce a thorough review according to the "
-        f"instructions in your system prompt and return the result as a JSON object."
+        f"Base branch: {base}, Head branch: {head}\n\n"
+        f"Run `git diff origin/{base}...origin/{head}` to see changes, then examine "
+        f"affected files. Return the review as a JSON object."
     )
-    return await run_agent(repo_path, CODE_REVIEWER_PROMPT, user_prompt, on_progress)
+    return await run_agent(repo_path, CODE_REVIEWER_PROMPT, user_prompt)
 
 
-async def run_project_analysis(repo_path: str, context: dict, on_progress: callable | None = None) -> dict:
-    """Run a project analysis agent using the supplied context payload."""
+async def run_project_analysis(repo_path: str, context: dict) -> dict:
     user_prompt = (
         "Analyse the current state of this project.\n\n"
-        f"Project context (tasks, PRs, team):\n{json.dumps(context, indent=2)}\n\n"
-        "Examine recent git history (`git log --oneline -50`) and any other "
-        "relevant repository information you need, then return the analysis as "
-        "a JSON object."
+        f"Project context:\n{json.dumps(context, indent=2, default=str)}\n\n"
+        "Examine git history and repo structure, then return the analysis as JSON."
     )
-    return await run_agent(repo_path, PROJECT_ANALYST_PROMPT, user_prompt, on_progress)
+    return await run_agent(repo_path, PROJECT_ANALYST_PROMPT, user_prompt)
 
 
-async def run_test_generation(
-    repo_path: str,
-    pr_number: int,
-    file_paths: list[str],
-    base: str,
-    head: str,
-    on_progress: Callable | None = None,
-) -> dict:
-    """Generate test scenarios for the changed files in a PR."""
-    files_list = "\n".join(f"- {p}" for p in file_paths)
+async def run_test_generation(repo_path: str, pr_number: int, file_paths: list[str], base: str, head: str) -> dict:
+    files_list = "\n".join(f"- {p}" for p in (file_paths or []))
     user_prompt = (
         f"Generate test scenarios for PR #{pr_number}.\n"
-        f"Base branch: {base}\n"
-        f"Head branch: {head}\n\n"
+        f"Base: {base}, Head: {head}\n"
         f"Changed files:\n{files_list}\n\n"
-        f"Run `git diff {base}...{head}` and read the changed files to understand "
-        f"what each change does. Then produce comprehensive test scenarios according "
-        f"to the instructions in your system prompt and return the result as a JSON object."
+        f"Return test scenarios as JSON."
     )
-    return await run_agent(repo_path, TEST_GENERATOR_PROMPT, user_prompt, on_progress)
+    return await run_agent(repo_path, TEST_GENERATOR_PROMPT, user_prompt)
 
 
-async def run_weekly_briefing(repo_path: str, context: dict, on_progress: callable | None = None) -> dict:
-    """Generate a weekly project briefing using the supplied context payload."""
+async def run_weekly_briefing(repo_path: str, context: dict) -> dict:
     user_prompt = (
         "Generate a weekly briefing for this project.\n\n"
-        f"Project data (tasks, PRs, members, activity):\n{json.dumps(context, indent=2)}\n\n"
-        "Also examine recent git history (`git log --oneline --since='7 days ago'`) "
-        "for additional context, then return the briefing as a JSON object."
+        f"Project data:\n{json.dumps(context, indent=2, default=str)}\n\n"
+        "Examine recent git history and return the briefing as JSON."
     )
-    return await run_agent(repo_path, WEEKLY_BRIEFING_PROMPT, user_prompt, on_progress)
+    return await run_agent(repo_path, WEEKLY_BRIEFING_PROMPT, user_prompt)
+
+
+# Streaming versions for SSE endpoints
+async def stream_project_analysis(repo_path: str, context: dict) -> AsyncGenerator[dict, None]:
+    user_prompt = (
+        "Analyse the current state of this project.\n\n"
+        f"Project context:\n{json.dumps(context, indent=2, default=str)}\n\n"
+        "Examine git history and repo structure, then return the analysis as JSON."
+    )
+    async for event in run_agent_stream(repo_path, PROJECT_ANALYST_PROMPT, user_prompt):
+        yield event
+
+
+async def stream_code_review(repo_path: str, pr_number: int, base: str, head: str) -> AsyncGenerator[dict, None]:
+    user_prompt = (
+        f"Review PR #{pr_number}.\n"
+        f"Base branch: {base}, Head branch: {head}\n\n"
+        f"Run `git diff origin/{base}...origin/{head}` to see changes, then examine "
+        f"affected files. Return the review as a JSON object."
+    )
+    async for event in run_agent_stream(repo_path, CODE_REVIEWER_PROMPT, user_prompt):
+        yield event

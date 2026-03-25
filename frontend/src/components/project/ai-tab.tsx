@@ -1,12 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  useRequestAnalysis,
-  useRequestTestScenarios,
-  useAIJobStatus,
-} from "@/hooks/use-ai";
+import { useRequestTestScenarios } from "@/hooks/use-ai";
 import { AIReviewList } from "@/components/ai/ai-review-list";
 import { AIReviewDetail } from "@/components/ai/ai-review-detail";
 import type { AIReview } from "@/components/ai/ai-review-detail";
@@ -20,75 +16,126 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Brain, FlaskConical, Loader2 } from "lucide-react";
+import { Brain, FlaskConical, Loader2, CheckCircle2, XCircle } from "lucide-react";
 
 interface AITabProps {
   projectId: string;
 }
 
+interface ProgressEntry {
+  message: string;
+  timestamp: string;
+}
+
 export function AITab({ projectId }: AITabProps) {
+  const queryClient = useQueryClient();
   const [selectedReview, setSelectedReview] = useState<AIReview | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [testDialogOpen, setTestDialogOpen] = useState(false);
   const [prNumber, setPrNumber] = useState("");
   const [filePaths, setFilePaths] = useState("");
 
-  const analyze = useRequestAnalysis(projectId);
   const testScenarios = useRequestTestScenarios(projectId);
 
-  // Track the latest job id returned from mutations
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const { data: jobStatus } = useAIJobStatus(activeJobId);
+  // SSE streaming state
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [progressLog, setProgressLog] = useState<ProgressEntry[]>([]);
+  const [analyzeStatus, setAnalyzeStatus] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   const handleAnalyze = async () => {
-    const result = await analyze.mutateAsync();
-    if (result?.job_id) setActiveJobId(result.job_id);
+    setIsAnalyzing(true);
+    setAnalyzeStatus("running");
+    setProgressLog([]);
+    setErrorMessage("");
+
+    try {
+      const token = sessionStorage.getItem("access_token");
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/ai/analyze`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) throw new Error("No response body");
+
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            const now = new Date().toLocaleTimeString("ko-KR", {
+              hour: "2-digit", minute: "2-digit", second: "2-digit",
+            });
+
+            if (event.type === "progress") {
+              setProgressLog((prev) => [...prev, { message: event.message, timestamp: now }]);
+              // Auto-scroll
+              setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+            } else if (event.type === "result") {
+              setAnalyzeStatus("done");
+              queryClient.invalidateQueries({ queryKey: ["ai-reviews", projectId] });
+            } else if (event.type === "error") {
+              setAnalyzeStatus("error");
+              setErrorMessage(event.message);
+            } else if (event.type === "done") {
+              // Stream ended
+            }
+          } catch {
+            // ignore parse errors
+          }
+        }
+      }
+    } catch (err) {
+      setAnalyzeStatus("error");
+      setErrorMessage(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setIsAnalyzing(false);
+      // Reset status after delay
+      setTimeout(() => {
+        if (analyzeStatus !== "error") setAnalyzeStatus("idle");
+      }, 5000);
+    }
   };
 
   const handleGenerateTests = async () => {
     const body: { pr_number?: number; file_paths?: string[] } = {};
     if (prNumber.trim()) body.pr_number = parseInt(prNumber.trim(), 10);
     if (filePaths.trim())
-      body.file_paths = filePaths
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
+      body.file_paths = filePaths.split(",").map((s) => s.trim()).filter(Boolean);
 
-    const result = await testScenarios.mutateAsync(body);
-    if (result?.job_id) setActiveJobId(result.job_id);
+    await testScenarios.mutateAsync(body);
     setTestDialogOpen(false);
     setPrNumber("");
     setFilePaths("");
   };
 
-  const queryClient = useQueryClient();
-  const prevStatus = useRef<string | null>(null);
-
-  const isJobRunning =
-    jobStatus?.status === "queued" || jobStatus?.status === "running";
-
-  // Auto-refresh reviews when job completes
-  useEffect(() => {
-    if (prevStatus.current && !["completed", "failed"].includes(prevStatus.current)) {
-      if (jobStatus?.status === "completed" || jobStatus?.status === "failed") {
-        queryClient.invalidateQueries({ queryKey: ["ai-reviews", projectId] });
-        // Clear active job after a brief delay so user sees the completion
-        setTimeout(() => setActiveJobId(null), 2000);
-      }
-    }
-    prevStatus.current = jobStatus?.status ?? null;
-  }, [jobStatus?.status, projectId, queryClient]);
-
   return (
     <div className="flex flex-col gap-4">
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          onClick={handleAnalyze}
-          disabled={analyze.isPending}
-        >
-          {analyze.isPending ? (
+        <Button size="sm" onClick={handleAnalyze} disabled={isAnalyzing}>
+          {isAnalyzing ? (
             <Loader2 className="mr-1.5 size-4 animate-spin" />
           ) : (
             <Brain className="mr-1.5 size-4" />
@@ -111,38 +158,40 @@ export function AITab({ projectId }: AITabProps) {
         </Button>
       </div>
 
-      {/* Job completed notification */}
-      {activeJobId && jobStatus?.status === "completed" && (
+      {/* Completion banner */}
+      {analyzeStatus === "done" && (
         <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+          <CheckCircle2 className="size-4" />
           AI 분석이 완료되었습니다.
         </div>
       )}
 
-      {activeJobId && jobStatus?.status === "failed" && (
+      {analyzeStatus === "error" && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
-          AI 분석이 실패했습니다: {jobStatus.error_message || "알 수 없는 오류"}
+          <XCircle className="size-4" />
+          {errorMessage || "AI 분석에 실패했습니다."}
         </div>
       )}
 
-      {/* Running job status with progress log */}
-      {isJobRunning && activeJobId && (
+      {/* Live progress log */}
+      {isAnalyzing && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 border-b border-blue-200 dark:border-blue-800">
             <Loader2 className="size-4 animate-spin" />
             <span>AI가 분석 중입니다...</span>
           </div>
-          {jobStatus?.progress_log && jobStatus.progress_log.length > 0 && (
-            <div className="max-h-48 overflow-y-auto px-3 py-2 space-y-1 font-mono text-xs text-blue-600 dark:text-blue-400">
-              {(jobStatus.progress_log as Array<{timestamp: string; message: string}>).slice(-15).map((entry, i) => (
-                <div key={i} className="flex gap-2">
-                  <span className="text-blue-400 dark:text-blue-600 shrink-0">
-                    {new Date(entry.timestamp).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                  </span>
-                  <span className="truncate">{entry.message}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="max-h-64 overflow-y-auto px-3 py-2 space-y-1 font-mono text-xs text-blue-600 dark:text-blue-400">
+            {progressLog.length === 0 && (
+              <div className="text-blue-400">대기 중...</div>
+            )}
+            {progressLog.map((entry, i) => (
+              <div key={i} className="flex gap-2">
+                <span className="text-blue-400 dark:text-blue-600 shrink-0">{entry.timestamp}</span>
+                <span>{entry.message}</span>
+              </div>
+            ))}
+            <div ref={logEndRef} />
+          </div>
         </div>
       )}
 
@@ -168,7 +217,6 @@ export function AITab({ projectId }: AITabProps) {
           <DialogHeader>
             <DialogTitle>Generate Test Scenarios</DialogTitle>
           </DialogHeader>
-
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="pr-number">PR Number (optional)</Label>
@@ -180,30 +228,22 @@ export function AITab({ projectId }: AITabProps) {
                 onChange={(e) => setPrNumber(e.target.value)}
               />
             </div>
-
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="file-paths">
-                File Paths (optional, comma-separated)
-              </Label>
+              <Label htmlFor="file-paths">File Paths (optional, comma-separated)</Label>
               <Input
                 id="file-paths"
-                placeholder="src/foo.ts, src/bar.ts"
+                placeholder="e.g. src/auth.py, src/api.py"
                 value={filePaths}
                 onChange={(e) => setFilePaths(e.target.value)}
               />
             </div>
           </div>
-
-          <DialogFooter showCloseButton>
-            <Button
-              size="sm"
-              onClick={handleGenerateTests}
-              disabled={testScenarios.isPending}
-            >
-              {testScenarios.isPending && (
-                <Loader2 className="mr-1.5 size-4 animate-spin" />
-              )}
-              Generate
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTestDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleGenerateTests} disabled={testScenarios.isPending}>
+              {testScenarios.isPending ? "Generating..." : "Generate"}
             </Button>
           </DialogFooter>
         </DialogContent>
