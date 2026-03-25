@@ -29,6 +29,8 @@ except ImportError:
     StreamEvent = None
     HAS_SDK = False
 
+from app.services.ai.custom_tools import build_pm_tools_server
+
 logger = logging.getLogger(__name__)
 
 
@@ -107,6 +109,7 @@ async def run_agent_stream(
     cwd: str | None = None,
     github_token: str | None = None,
     extra_tools: list[str] | None = None,
+    pm_tools_server=None,
 ) -> AsyncGenerator[dict, None]:
     """Async generator that yields progress events then the final result.
 
@@ -128,6 +131,11 @@ async def run_agent_stream(
     mcp_servers = _build_mcp_servers(github_token)
     if mcp_servers:
         allowed_tools.append("mcp__github__*")
+
+    # Add PM Agent custom tools if provided
+    if pm_tools_server:
+        mcp_servers["pm_agent"] = pm_tools_server
+        allowed_tools.append("mcp__pm_agent__*")
 
     options_kwargs = {
         "allowed_tools": allowed_tools,
@@ -197,9 +205,9 @@ async def run_agent_stream(
 # Non-streaming wrapper
 # ---------------------------------------------------------------------------
 
-async def run_agent(system_prompt: str, user_prompt: str, cwd: str | None = None, github_token: str | None = None) -> str:
+async def run_agent(system_prompt: str, user_prompt: str, cwd: str | None = None, github_token: str | None = None, pm_tools_server=None) -> str:
     """Run agent and return the final result as plain text."""
-    async for event in run_agent_stream(system_prompt, user_prompt, cwd=cwd, github_token=github_token):
+    async for event in run_agent_stream(system_prompt, user_prompt, cwd=cwd, github_token=github_token, pm_tools_server=pm_tools_server):
         if event["type"] == "result":
             return event["data"]
         if event["type"] == "error":
@@ -221,14 +229,16 @@ async def run_code_review(github_token: str, repo_owner: str, repo_name: str, pr
     return await run_agent(CODE_REVIEWER_PROMPT, user_prompt, github_token=github_token)
 
 
-async def run_project_analysis(github_token: str, repo_owner: str, repo_name: str, context: str) -> str:
+async def run_project_analysis(github_token: str, repo_owner: str, repo_name: str, context: str, pm_tools_server=None) -> str:
     user_prompt = (
         f"Analyse the current state of the {repo_owner}/{repo_name} project.\n\n"
         f"Project context:\n{context}\n\n"
         f"Use the GitHub MCP tools to examine recent commits, PRs, and issues. "
-        f"Provide a detailed analysis."
+        f"Also use the PM Agent tools (get_project_tasks, get_project_progress, get_project_issues, get_project_members) "
+        f"to get detailed project management data. "
+        f"Provide a detailed analysis combining both code and project data."
     )
-    return await run_agent(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token)
+    return await run_agent(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token, pm_tools_server=pm_tools_server)
 
 
 async def run_test_generation(github_token: str, repo_owner: str, repo_name: str, pr_number: int | None, file_paths: list[str] | None, base: str | None, head: str | None) -> str:
@@ -256,12 +266,14 @@ async def run_weekly_briefing(github_token: str, repo_owner: str, repo_name: str
 
 
 # Streaming versions for SSE endpoints
-async def stream_project_analysis(github_token: str, repo_owner: str, repo_name: str, context: str) -> AsyncGenerator[dict, None]:
+async def stream_project_analysis(github_token: str, repo_owner: str, repo_name: str, context: str, pm_tools_server=None) -> AsyncGenerator[dict, None]:
     user_prompt = (
         f"Analyse the current state of the {repo_owner}/{repo_name} project.\n\n"
         f"Project context:\n{context}\n\n"
         f"Use the GitHub MCP tools to examine recent commits, PRs, and issues. "
-        f"Provide a detailed analysis."
+        f"Also use the PM Agent tools (get_project_tasks, get_project_progress, get_project_issues, get_project_members) "
+        f"to get detailed project management data. "
+        f"Provide a detailed analysis combining both code and project data."
     )
-    async for event in run_agent_stream(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token):
+    async for event in run_agent_stream(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token, pm_tools_server=pm_tools_server):
         yield event
