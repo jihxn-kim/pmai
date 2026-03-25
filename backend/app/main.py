@@ -51,7 +51,20 @@ async def lifespan(app_instance: FastAPI):
         scheduler.shutdown()
 
 
-app = FastAPI(title="PM Agent API", lifespan=lifespan, redirect_slashes=False)
+app = FastAPI(title="PM Agent API", lifespan=lifespan)
+
+
+# Fix HTTPS redirect behind Railway proxy
+@app.middleware("http")
+async def force_https_redirects(request: Request, call_next):
+    response = await call_next(request)
+    # If FastAPI generates a redirect, ensure it uses https when behind proxy
+    if response.status_code in (301, 302, 307, 308):
+        location = response.headers.get("location", "")
+        if location.startswith("http://") and request.headers.get("x-forwarded-proto") == "https":
+            response.headers["location"] = location.replace("http://", "https://", 1)
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,
