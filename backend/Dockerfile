@@ -14,8 +14,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# claude-agent-sdk 설치 후 FastAPI 호환 버전 복구
-RUN pip install --no-cache-dir "starlette>=0.37.2,<0.39.0" "fastapi==0.115.0"
+# 패키지 호환성 수정:
+# 1. claude-agent-sdk가 최신 mcp를 요구하므로 업그레이드
+# 2. starlette/fastapi 호환 버전 복구
+RUN pip install --no-cache-dir --upgrade mcp && \
+    pip install --no-cache-dir "starlette>=0.37.2,<0.39.0" "fastapi==0.115.0"
 
 COPY . .
 
