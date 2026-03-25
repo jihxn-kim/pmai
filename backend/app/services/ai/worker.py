@@ -196,8 +196,7 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 if not project or not project.github_repo_url:
                     raise ValueError("Project has no GitHub repo connected")
 
-                context = await build_project_context(db, project.id)
-                result = await run_project_analysis(github_token, repo_owner, repo_name, context)
+                result = await run_project_analysis(github_token, repo_owner, repo_name)
                 await _update_job_progress(job.id, "분석 완료. 결과를 저장합니다...")
 
                 summary = result[:200] + "..." if len(result) > 200 else result

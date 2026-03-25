@@ -25,7 +25,6 @@ from app.schemas.ai import (
 from app.services.ai.executor import stream_project_analysis
 from app.services.ai.custom_tools import build_pm_tools_server
 from app.services.github_service import get_installation_token
-from app.services.ai.worker import build_project_context
 
 router = APIRouter(tags=["ai"])
 
@@ -63,8 +62,6 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
         repo_owner = parts[-2] if len(parts) >= 2 else ""
         repo_name = parts[-1] if len(parts) >= 1 else ""
 
-        context = await build_project_context(db, project.id)
-
         # Build custom tools server — each tool opens its own DB session from the pool
         pm_tools = build_pm_tools_server(str(project_id))
 
@@ -73,7 +70,7 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
 
         async def _feed_queue():
             try:
-                async for event in stream_project_analysis(github_token, repo_owner, repo_name, context, pm_tools_server=pm_tools):
+                async for event in stream_project_analysis(github_token, repo_owner, repo_name, pm_tools_server=pm_tools):
                     await queue.put(event)
             except Exception as e:
                 await queue.put({"type": "error", "message": str(e)[:500]})

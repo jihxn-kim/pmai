@@ -228,14 +228,13 @@ async def run_code_review(github_token: str, repo_owner: str, repo_name: str, pr
     return await run_agent(CODE_REVIEWER_PROMPT, user_prompt, github_token=github_token)
 
 
-async def run_project_analysis(github_token: str, repo_owner: str, repo_name: str, context: str, pm_tools_server=None) -> str:
+async def run_project_analysis(github_token: str, repo_owner: str, repo_name: str, pm_tools_server=None) -> str:
     user_prompt = (
-        f"Analyse the current state of the {repo_owner}/{repo_name} project.\n\n"
-        f"Project context:\n{context}\n\n"
-        f"Use the GitHub MCP tools to examine recent commits, PRs, and issues. "
-        f"Also use the PM Agent tools (get_project_tasks, get_project_progress, get_project_issues, get_project_members) "
-        f"to get detailed project management data. "
-        f"Provide a detailed analysis combining both code and project data."
+        f"{repo_owner}/{repo_name} 프로젝트의 현재 상태를 분석하세요.\n\n"
+        f"다음 도구들을 활용하세요:\n"
+        f"- GitHub MCP 도구: 커밋, PR, 이슈, 파일 구조 조회\n"
+        f"- PM Agent 도구: get_project_tasks, get_project_progress, get_project_issues, get_project_members, get_pull_requests\n\n"
+        f"코드와 프로젝트 관리 데이터를 모두 결합해서 종합 분석을 제공하세요."
     )
     return await run_agent(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token, pm_tools_server=pm_tools_server)
 
@@ -265,14 +264,13 @@ async def run_weekly_briefing(github_token: str, repo_owner: str, repo_name: str
 
 
 # Streaming versions for SSE endpoints
-async def stream_project_analysis(github_token: str, repo_owner: str, repo_name: str, context: str, pm_tools_server=None) -> AsyncGenerator[dict, None]:
+async def stream_project_analysis(github_token: str, repo_owner: str, repo_name: str, pm_tools_server=None) -> AsyncGenerator[dict, None]:
     user_prompt = (
-        f"Analyse the current state of the {repo_owner}/{repo_name} project.\n\n"
-        f"Project context:\n{context}\n\n"
-        f"Use the GitHub MCP tools to examine recent commits, PRs, and issues. "
-        f"Also use the PM Agent tools (get_project_tasks, get_project_progress, get_project_issues, get_project_members) "
-        f"to get detailed project management data. "
-        f"Provide a detailed analysis combining both code and project data."
+        f"{repo_owner}/{repo_name} 프로젝트의 현재 상태를 분석하세요.\n\n"
+        f"다음 도구들을 활용하세요:\n"
+        f"- GitHub MCP 도구: 커밋, PR, 이슈, 파일 구조 조회\n"
+        f"- PM Agent 도구: get_project_tasks, get_project_progress, get_project_issues, get_project_members, get_pull_requests\n\n"
+        f"코드와 프로젝트 관리 데이터를 모두 결합해서 종합 분석을 제공하세요."
     )
     async for event in run_agent_stream(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token, pm_tools_server=pm_tools_server):
         yield event
