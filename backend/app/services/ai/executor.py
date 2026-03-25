@@ -164,26 +164,16 @@ async def run_agent_stream(
         yield {"type": "error", "message": "Agent produced no output"}
         return
 
-    # Parse JSON from result
-    stripped = raw_output.strip()
-    match = re.search(r"```(?:json)?\s*([\s\S]*?)```", stripped)
-    if match:
-        stripped = match.group(1).strip()
-
-    try:
-        parsed = json.loads(stripped)
-        yield {"type": "result", "data": parsed}
-    except json.JSONDecodeError:
-        # Return raw text as result if not JSON
-        yield {"type": "result", "data": {"summary": raw_output[:2000]}}
+    # Return as plain text — no JSON parsing
+    yield {"type": "result", "data": raw_output}
 
 
 # ---------------------------------------------------------------------------
 # Non-streaming wrapper (for backward compat with worker/webhooks)
 # ---------------------------------------------------------------------------
 
-async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> dict:
-    """Run agent and return only the final result dict."""
+async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> str:
+    """Run agent and return the final result as plain text."""
     async for event in run_agent_stream(repo_path, system_prompt, user_prompt):
         if event["type"] == "result":
             return event["data"]

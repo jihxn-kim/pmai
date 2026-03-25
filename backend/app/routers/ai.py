@@ -84,14 +84,16 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
             if event["type"] == "progress":
                 yield f"data: {json.dumps(event)}\n\n"
             elif event["type"] == "result":
-                result_data = event["data"]
+                result_text = event["data"]  # Now plain text, not dict
+                # Take first 200 chars as summary, full text in detail
+                summary = result_text[:200] + "..." if len(result_text) > 200 else result_text
                 review = AIReview(
                     project_id=project.id,
                     type=AIReviewType.analysis,
                     status=AIReviewStatus.completed,
-                    summary=result_data.get("progress_assessment", result_data.get("summary", "")),
-                    detail=result_data,
-                    suggestions=result_data.get("recommendations", []),
+                    summary=summary,
+                    detail={"text": result_text},
+                    suggestions=[],
                     requested_by=user_id,
                     completed_at=datetime.now(timezone.utc),
                 )

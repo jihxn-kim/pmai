@@ -137,14 +137,15 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 )
                 pr = pr_result.scalar_one_or_none()
 
+                summary = result[:200] + "..." if len(result) > 200 else result
                 review = AIReview(
                     project_id=project.id,
                     pull_request_id=pr.id if pr else None,
                     type=AIReviewType.code_review,
                     status=AIReviewStatus.completed,
-                    summary=result.get("summary", ""),
-                    detail=result,
-                    suggestions=result.get("overall_issues", []),
+                    summary=summary,
+                    detail={"text": result},
+                    suggestions=[],
                     requested_by=(
                         uuid.UUID(job.payload["requested_by"])
                         if job.payload.get("requested_by")
@@ -177,7 +178,7 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 try:
                     from app.services.slack.notifications import send_slack_notification
                     from app.services.slack.formatters import format_ai_review_notification
-                    score = result.get("score")
+                    score = None  # No longer parsed from JSON
                     await send_slack_notification(
                         db, org_id=project.org_id, channel_type="project", project_id=project.id,
                         blocks=format_ai_review_notification(review.summary or "", payload["pr_number"], score),
@@ -202,13 +203,14 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                 result = await run_project_analysis(repo_path, context)
                 await _update_job_progress(job.id, "분석 완료. 결과를 저장합니다...")
 
+                summary = result[:200] + "..." if len(result) > 200 else result
                 review = AIReview(
                     project_id=project.id,
                     type=AIReviewType.analysis,
                     status=AIReviewStatus.completed,
-                    summary=result.get("progress_assessment", ""),
-                    detail=result,
-                    suggestions=result.get("recommendations", []),
+                    summary=summary,
+                    detail={"text": result},
+                    suggestions=[],
                     requested_by=(
                         uuid.UUID(job.payload["requested_by"])
                         if job.payload.get("requested_by")
@@ -253,13 +255,14 @@ async def process_ai_job(job_id: uuid.UUID) -> None:
                     head,
                 )
 
+                summary = result[:200] + "..." if len(result) > 200 else result
                 review = AIReview(
                     project_id=project.id,
                     pull_request_id=pr.id if pr else None,
                     type=AIReviewType.test_scenario,
                     status=AIReviewStatus.completed,
-                    summary=f"{len(result.get('test_scenarios', []))} test scenarios generated",
-                    detail=result,
+                    summary=summary,
+                    detail={"text": result},
                     suggestions=[],
                     requested_by=(
                         uuid.UUID(job.payload["requested_by"])
