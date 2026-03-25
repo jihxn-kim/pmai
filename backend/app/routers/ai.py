@@ -60,6 +60,8 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
         async for event in stream_project_analysis(repo_path, context):
             if event["type"] == "progress":
                 yield f"data: {json.dumps(event)}\n\n"
+            elif event["type"] == "heartbeat":
+                yield ": heartbeat\n\n"  # SSE comment — keeps connection alive
             elif event["type"] == "result":
                 result_data = event["data"]
             elif event["type"] == "error":

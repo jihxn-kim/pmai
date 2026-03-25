@@ -117,7 +117,18 @@ async def run_agent_stream(
 
     raw_output = None
     try:
-        async for message in query(prompt=user_prompt, options=options):
+        # Use an async iterator with heartbeat to prevent connection timeout
+        aiter = query(prompt=user_prompt, options=options).__aiter__()
+        while True:
+            try:
+                message = await asyncio.wait_for(aiter.__anext__(), timeout=15.0)
+            except StopAsyncIteration:
+                break
+            except asyncio.TimeoutError:
+                # No message in 15s — send heartbeat to keep connection alive
+                yield {"type": "heartbeat"}
+                continue
+
             if ResultMessage is not None and isinstance(message, ResultMessage):
                 raw_output = message.result if hasattr(message, "result") else getattr(message, "content", None)
                 break
