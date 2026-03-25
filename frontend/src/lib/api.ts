@@ -1,19 +1,6 @@
 import axios from "axios";
 
-function getApiUrl(): string {
-  // Vercel env var (set at build time)
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-  // Browser: if running on localhost, use local backend
-  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
-    return "http://localhost:8000";
-  }
-  // Production fallback: same origin or Railway backend
-  return "https://backend-production-587e.up.railway.app";
-}
-
-const API_URL = getApiUrl();
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const api = axios.create({
   baseURL: API_URL,
