@@ -116,6 +116,7 @@ async def run_agent_stream(
     )
 
     raw_output = None
+    last_text = None  # Track last assistant text as fallback
     try:
         # Use an async iterator with heartbeat to prevent connection timeout
         aiter = query(prompt=user_prompt, options=options).__aiter__()
@@ -129,18 +130,47 @@ async def run_agent_stream(
                 yield {"type": "heartbeat"}
                 continue
 
+            msg_type = type(message).__name__
+            logger.info("Agent message: type=%s, attrs=%s", msg_type, [a for a in dir(message) if not a.startswith("_")])
+
             if ResultMessage is not None and isinstance(message, ResultMessage):
-                raw_output = message.result if hasattr(message, "result") else getattr(message, "content", None)
+                # Try multiple possible attribute names
+                raw_output = (
+                    getattr(message, "result", None)
+                    or getattr(message, "content", None)
+                    or getattr(message, "text", None)
+                )
+                # If result is still None, check if it's a stop message with content elsewhere
+                if raw_output is None and hasattr(message, "stop_reason"):
+                    logger.warning("ResultMessage has stop_reason=%s but no result text", message.stop_reason)
+                yield {"type": "progress", "message": f"✅ 분석 완료 ({msg_type})"}
                 break
+
+            # Capture assistant text blocks as fallback result
+            if hasattr(message, "content"):
+                content = message.content
+                if isinstance(content, list):
+                    for block in content:
+                        if hasattr(block, "text") and block.text:
+                            last_text = block.text
+                elif isinstance(content, str) and content:
+                    last_text = content
 
             # Yield progress for intermediate messages
             text = _extract_message_text(message)
             if text:
                 yield {"type": "progress", "message": text}
+            else:
+                yield {"type": "progress", "message": f"⏳ {msg_type}..."}
 
     except Exception as exc:
         yield {"type": "error", "message": str(exc)[:500]}
         return
+
+    # Use last_text as fallback if no explicit ResultMessage
+    if raw_output is None and last_text:
+        raw_output = last_text
+        logger.info("Using last assistant text as fallback result (%d chars)", len(last_text))
 
     if raw_output is None:
         yield {"type": "error", "message": "Agent produced no output"}
