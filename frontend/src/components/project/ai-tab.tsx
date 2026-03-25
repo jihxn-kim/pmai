@@ -187,7 +187,7 @@ export function AITab({ projectId }: AITabProps) {
             {progressLog.map((entry, i) => (
               <div key={i} className="flex gap-2">
                 <span className="text-blue-400 dark:text-blue-600 shrink-0">{entry.timestamp}</span>
-                <span>{entry.message}</span>
+                <span className="whitespace-pre-wrap">{entry.message}</span>
               </div>
             ))}
             <div ref={logEndRef} />

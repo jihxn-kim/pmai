@@ -75,18 +75,26 @@ def _extract_message_text(message) -> str | None:
 
     content = message.content
     if isinstance(content, str):
-        return content[:300]
+        return f"💬 {content[:300]}"
     if isinstance(content, list):
+        parts = []
         for block in content:
-            if hasattr(block, "name"):
+            block_type = getattr(block, "type", "")
+            if block_type == "thinking" or hasattr(block, "thinking"):
+                thinking = getattr(block, "thinking", "")
+                if thinking:
+                    parts.append(f"🧠 {thinking[:300]}")
+            elif hasattr(block, "name"):
                 # Tool use block
                 tool_input = getattr(block, "input", {})
                 if isinstance(tool_input, dict):
                     path = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("command", "")
-                    return f"🔧 {block.name} → {str(path)[:150]}"
-                return f"🔧 {block.name}"
-            if hasattr(block, "text") and block.text:
-                return f"💬 {block.text[:300]}"
+                    parts.append(f"🔧 {block.name} → {str(path)[:150]}")
+                else:
+                    parts.append(f"🔧 {block.name}")
+            elif hasattr(block, "text") and block.text:
+                parts.append(f"💬 {block.text[:300]}")
+        return "\n".join(parts) if parts else None
     return None
 
 
