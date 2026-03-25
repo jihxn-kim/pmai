@@ -40,7 +40,7 @@ export function SlackConnect({ orgId }: SlackConnectProps) {
         <Button
           variant="default"
           onClick={() => {
-            window.location.href = `/api/orgs/${orgId}/slack/auth`;
+            window.location.href = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/orgs/${orgId}/slack/auth`;
           }}
         >
           Connect Slack

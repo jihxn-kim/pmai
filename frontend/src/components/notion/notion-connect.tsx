@@ -27,7 +27,7 @@ export function NotionConnect({ orgId }: NotionConnectProps) {
         <Button
           variant="default"
           onClick={() => {
-            window.location.href = `/api/orgs/${orgId}/notion/auth`;
+            window.location.href = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/orgs/${orgId}/notion/auth`;
           }}
         >
           Connect Notion

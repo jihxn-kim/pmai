@@ -23,7 +23,7 @@ export function CalendarConnect() {
         <Button
           variant="default"
           onClick={() => {
-            window.location.href = `/api/calendar/auth`;
+            window.location.href = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/calendar/auth`;
           }}
         >
           Connect Google Calendar
