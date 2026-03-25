@@ -67,18 +67,20 @@ async def github_setup_callback(
     db: AsyncSession = Depends(get_db),
 ):
     """GitHub App post-installation callback. Saves installation_id to the org."""
+    org_slug = None
     if state:
         try:
             org_id = uuid.UUID(state)
             org = await db.get(Organization, org_id)
             if org:
                 org.github_installation_id = installation_id
+                org_slug = org.slug
                 await db.commit()
         except (ValueError, Exception):
             pass
 
-    # Redirect back to frontend settings
-    redirect_path = f"/org/{state}/settings" if state else "/"
+    # Redirect back to frontend settings using slug, not UUID
+    redirect_path = f"/org/{org_slug}/settings" if org_slug else "/"
     return RedirectResponse(url=f"{settings.frontend_url}{redirect_path}?github=installed")
 
 
