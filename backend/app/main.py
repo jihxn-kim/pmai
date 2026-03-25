@@ -93,53 +93,6 @@ async def structured_error_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"error": {"code": 500, "message": "Internal server error"}})
 
 
-@app.get("/api/debug/sdk")
-async def debug_sdk():
-    """Debug endpoint to check SDK and auth status."""
-    import sys
-    import subprocess
-    info = {"python": sys.version}
-    try:
-        import claude_agent_sdk
-        info["sdk"] = "installed"
-        info["sdk_version"] = getattr(claude_agent_sdk, "__version__", "unknown")
-    except ImportError as e:
-        info["sdk"] = f"not installed: {e}"
-    try:
-        result = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5)
-        info["cli"] = result.stdout.strip() or result.stderr.strip()
-    except Exception as e:
-        info["cli"] = f"error: {e}"
-    try:
-        result = subprocess.run(["claude", "auth", "status"], capture_output=True, text=True, timeout=10)
-        info["auth"] = result.stdout.strip() or result.stderr.strip()
-    except Exception as e:
-        info["auth"] = f"error: {e}"
-    try:
-        result = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=5)
-        info["node"] = result.stdout.strip()
-    except Exception as e:
-        info["node"] = f"error: {e}"
-    import os
-    info["has_anthropic_auth_token"] = bool(os.environ.get("ANTHROPIC_AUTH_TOKEN"))
-    info["has_anthropic_key"] = bool(os.environ.get("ANTHROPIC_API_KEY"))
-
-    # Direct CLI test — bare mode, no tools, just echo
-    try:
-        result = subprocess.run(
-            ["claude", "-p", "say hi", "--bare", "--max-turns", "1", "--output-format", "json"],
-            capture_output=True, text=True, timeout=60,
-        )
-        info["cli_test_stdout"] = result.stdout[:300] if result.stdout else ""
-        info["cli_test_stderr"] = result.stderr[:300] if result.stderr else ""
-        info["cli_test_exit"] = result.returncode
-    except subprocess.TimeoutExpired:
-        info["cli_test"] = "timeout (60s)"
-    except Exception as e:
-        info["cli_test"] = f"error: {e}"
-
-    return info
-
 app.include_router(auth.router)
 app.include_router(orgs.router)
 app.include_router(projects.router)
