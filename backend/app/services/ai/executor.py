@@ -1,20 +1,15 @@
-"""Agent Executor: manages repo cloning and wraps Claude Agent SDK calls.
+"""Agent Executor: wraps Claude Agent SDK calls with SSE streaming.
 
-Uses SSE streaming — the run_agent_stream() async generator yields progress
-messages as they arrive, then yields the final parsed JSON result.
+Uses GitHub MCP server instead of git clone for repo access.
+Returns plain text (markdown) results, no JSON parsing.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import os
-import re
-import shutil
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Callable
 
 from app.config import settings
-from app.services.github_service import get_installation_token
 from app.services.ai.prompts import (
     CODE_REVIEWER_PROMPT,
     PROJECT_ANALYST_PROMPT,
@@ -24,52 +19,61 @@ from app.services.ai.prompts import (
 
 try:
     from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage, AssistantMessage
+    from claude_agent_sdk.types import StreamEvent
+    HAS_SDK = True
 except ImportError:
     query = None
     ClaudeAgentOptions = None
     ResultMessage = None
     AssistantMessage = None
+    StreamEvent = None
+    HAS_SDK = False
 
 logger = logging.getLogger(__name__)
 
 
-async def clone_or_update_repo(
-    project_id: str,
-    job_id: str,
-    repo_url: str,
-    installation_id: int,
-) -> str:
-    """Clone the repo to an isolated directory for this job and return the path."""
-    token = await get_installation_token(installation_id)
-    authenticated_url = repo_url.replace("https://", f"https://x-access-token:{token}@")
-
-    repo_path = os.path.join(settings.ai_repo_base_path, str(project_id), str(job_id))
-    if os.path.exists(repo_path):
-        shutil.rmtree(repo_path)
-    os.makedirs(repo_path, exist_ok=True)
-
-    proc = await asyncio.create_subprocess_exec(
-        "git", "clone", "--depth", "50", authenticated_url, repo_path,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-
-    if proc.returncode != 0:
-        err_msg = stderr.decode(errors="replace").strip().replace(token, "<token>")
-        raise RuntimeError(f"git clone failed: {err_msg}")
-
-    return repo_path
+def _build_mcp_servers(github_token: str | None = None) -> dict:
+    """Build MCP server config for GitHub access."""
+    servers = {}
+    if github_token:
+        servers["github"] = {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
+            "env": {"GITHUB_TOKEN": github_token},
+        }
+    return servers
 
 
-def cleanup_repo(project_id: str, job_id: str) -> None:
-    """Remove the job-specific repo directory."""
-    repo_path = os.path.join(settings.ai_repo_base_path, str(project_id), str(job_id))
-    if os.path.exists(repo_path):
-        shutil.rmtree(repo_path, ignore_errors=True)
+def _extract_stream_text(event: dict) -> str | None:
+    """Extract text from a StreamEvent for progress display."""
+    event_type = event.get("type")
+
+    if event_type == "content_block_start":
+        content_block = event.get("content_block", {})
+        if content_block.get("type") == "tool_use":
+            return f"🔧 Using {content_block.get('name', 'tool')}..."
+        return None
+
+    if event_type == "content_block_delta":
+        delta = event.get("delta", {})
+        if delta.get("type") == "text_delta":
+            text = delta.get("text", "")
+            if text.strip():
+                return f"💬 {text[:200]}"
+        if delta.get("type") == "thinking_delta":
+            thinking = delta.get("thinking", "")
+            if thinking.strip():
+                return f"🧠 {thinking[:200]}"
+        return None
+
+    if event_type == "content_block_stop":
+        return None
+
+    return None
 
 
 def _extract_message_text(message) -> str | None:
-    """Extract human-readable text from an Agent SDK message."""
+    """Extract human-readable text from a complete AssistantMessage."""
     if not hasattr(message, "content"):
         return None
 
@@ -85,7 +89,6 @@ def _extract_message_text(message) -> str | None:
                 if thinking:
                     parts.append(f"🧠 {thinking[:300]}")
             elif hasattr(block, "name"):
-                # Tool use block
                 tool_input = getattr(block, "input", {})
                 if isinstance(tool_input, dict):
                     path = tool_input.get("file_path") or tool_input.get("path") or tool_input.get("command", "")
@@ -99,36 +102,60 @@ def _extract_message_text(message) -> str | None:
 
 
 async def run_agent_stream(
-    repo_path: str,
     system_prompt: str,
     user_prompt: str,
+    cwd: str | None = None,
+    github_token: str | None = None,
+    extra_tools: list[str] | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Async generator that yields progress events then the final result.
 
-    Yields dicts with:
+    Yields:
       {"type": "progress", "message": "..."}
-      {"type": "result", "data": {...parsed JSON...}}
+      {"type": "result", "data": "...text..."}
       {"type": "error", "message": "..."}
     """
-    if query is None:
+    if not HAS_SDK:
         yield {"type": "error", "message": "claude-agent-sdk is not installed"}
         return
 
-    options = ClaudeAgentOptions(
-        cwd=repo_path,
-        allowed_tools=["Read", "Glob", "Grep", "Bash"],
-        system_prompt=system_prompt,
-        model=settings.ai_model,
-        max_turns=settings.ai_max_turns,
-        permission_mode="bypassPermissions",
-    )
+    # Build tools list
+    allowed_tools = ["Read", "Glob", "Grep", "Bash"]
+    if extra_tools:
+        allowed_tools.extend(extra_tools)
+
+    # Add GitHub MCP if token provided
+    mcp_servers = _build_mcp_servers(github_token)
+    if mcp_servers:
+        allowed_tools.append("mcp__github__*")
+
+    options_kwargs = {
+        "allowed_tools": allowed_tools,
+        "system_prompt": system_prompt,
+        "model": settings.ai_model,
+        "max_turns": settings.ai_max_turns,
+        "permission_mode": "bypassPermissions",
+        "include_partial_messages": True,
+    }
+    if cwd:
+        options_kwargs["cwd"] = cwd
+    if mcp_servers:
+        options_kwargs["mcp_servers"] = mcp_servers
+
+    options = ClaudeAgentOptions(**options_kwargs)
 
     raw_output = None
-    last_text = None  # Track last assistant text as fallback
+    last_text = None
     try:
         async for message in query(prompt=user_prompt, options=options):
-            msg_type = type(message).__name__
+            # Handle StreamEvent (partial messages)
+            if StreamEvent is not None and isinstance(message, StreamEvent):
+                text = _extract_stream_text(message.event)
+                if text:
+                    yield {"type": "progress", "message": text}
+                continue
 
+            # Handle ResultMessage
             if ResultMessage is not None and isinstance(message, ResultMessage):
                 raw_output = (
                     getattr(message, "result", None)
@@ -137,7 +164,7 @@ async def run_agent_stream(
                 )
                 break
 
-            # Capture assistant text blocks as fallback result
+            # Capture assistant text as fallback
             if hasattr(message, "content"):
                 content = message.content
                 if isinstance(content, list):
@@ -147,7 +174,7 @@ async def run_agent_stream(
                 elif isinstance(content, str) and content:
                     last_text = content
 
-            # Yield progress only for meaningful messages
+            # Yield progress for complete AssistantMessages
             text = _extract_message_text(message)
             if text:
                 yield {"type": "progress", "message": text}
@@ -156,7 +183,6 @@ async def run_agent_stream(
         yield {"type": "error", "message": str(exc)[:500]}
         return
 
-    # Use last_text as fallback if no explicit ResultMessage
     if raw_output is None and last_text:
         raw_output = last_text
 
@@ -164,17 +190,16 @@ async def run_agent_stream(
         yield {"type": "error", "message": "Agent produced no output"}
         return
 
-    # Return as plain text — no JSON parsing
     yield {"type": "result", "data": raw_output}
 
 
 # ---------------------------------------------------------------------------
-# Non-streaming wrapper (for backward compat with worker/webhooks)
+# Non-streaming wrapper
 # ---------------------------------------------------------------------------
 
-async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> str:
+async def run_agent(system_prompt: str, user_prompt: str, cwd: str | None = None, github_token: str | None = None) -> str:
     """Run agent and return the final result as plain text."""
-    async for event in run_agent_stream(repo_path, system_prompt, user_prompt):
+    async for event in run_agent_stream(system_prompt, user_prompt, cwd=cwd, github_token=github_token):
         if event["type"] == "result":
             return event["data"]
         if event["type"] == "error":
@@ -183,65 +208,60 @@ async def run_agent(repo_path: str, system_prompt: str, user_prompt: str) -> str
 
 
 # ---------------------------------------------------------------------------
-# High-level task runners
+# High-level task runners (use GitHub MCP, no clone needed)
 # ---------------------------------------------------------------------------
 
-async def run_code_review(repo_path: str, pr_number: int, base: str, head: str) -> dict:
+async def run_code_review(github_token: str, repo_owner: str, repo_name: str, pr_number: int, base: str, head: str) -> str:
     user_prompt = (
-        f"Review PR #{pr_number}.\n"
+        f"Review PR #{pr_number} in {repo_owner}/{repo_name}.\n"
         f"Base branch: {base}, Head branch: {head}\n\n"
-        f"Run `git diff origin/{base}...origin/{head}` to see changes, then examine "
-        f"affected files. Return the review as a JSON object."
+        f"Use the GitHub MCP tools to fetch the PR diff and examine the changes. "
+        f"Provide a thorough code review."
     )
-    return await run_agent(repo_path, CODE_REVIEWER_PROMPT, user_prompt)
+    return await run_agent(CODE_REVIEWER_PROMPT, user_prompt, github_token=github_token)
 
 
-async def run_project_analysis(repo_path: str, context: dict) -> dict:
+async def run_project_analysis(github_token: str, repo_owner: str, repo_name: str, context: str) -> str:
     user_prompt = (
-        "Analyse the current state of this project.\n\n"
-        f"Project context:\n{json.dumps(context, indent=2, default=str)}\n\n"
-        "Examine git history and repo structure, then return the analysis as JSON."
+        f"Analyse the current state of the {repo_owner}/{repo_name} project.\n\n"
+        f"Project context:\n{context}\n\n"
+        f"Use the GitHub MCP tools to examine recent commits, PRs, and issues. "
+        f"Provide a detailed analysis."
     )
-    return await run_agent(repo_path, PROJECT_ANALYST_PROMPT, user_prompt)
+    return await run_agent(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token)
 
 
-async def run_test_generation(repo_path: str, pr_number: int, file_paths: list[str], base: str, head: str) -> dict:
-    files_list = "\n".join(f"- {p}" for p in (file_paths or []))
+async def run_test_generation(github_token: str, repo_owner: str, repo_name: str, pr_number: int | None, file_paths: list[str] | None, base: str | None, head: str | None) -> str:
+    if pr_number:
+        user_prompt = (
+            f"Generate test scenarios for PR #{pr_number} in {repo_owner}/{repo_name}.\n"
+            f"Use the GitHub MCP tools to fetch the PR changes and generate comprehensive test scenarios."
+        )
+    else:
+        files_str = "\n".join(f"- {p}" for p in (file_paths or []))
+        user_prompt = (
+            f"Generate test scenarios for these files in {repo_owner}/{repo_name}:\n{files_str}\n\n"
+            f"Use the GitHub MCP tools to read the files and generate test scenarios."
+        )
+    return await run_agent(TEST_GENERATOR_PROMPT, user_prompt, github_token=github_token)
+
+
+async def run_weekly_briefing(github_token: str, repo_owner: str, repo_name: str, context: str) -> str:
     user_prompt = (
-        f"Generate test scenarios for PR #{pr_number}.\n"
-        f"Base: {base}, Head: {head}\n"
-        f"Changed files:\n{files_list}\n\n"
-        f"Return test scenarios as JSON."
+        f"Generate a weekly briefing for the {repo_owner}/{repo_name} project.\n\n"
+        f"Project data:\n{context}\n\n"
+        f"Use the GitHub MCP tools to examine recent activity and provide the briefing."
     )
-    return await run_agent(repo_path, TEST_GENERATOR_PROMPT, user_prompt)
-
-
-async def run_weekly_briefing(repo_path: str, context: dict) -> dict:
-    user_prompt = (
-        "Generate a weekly briefing for this project.\n\n"
-        f"Project data:\n{json.dumps(context, indent=2, default=str)}\n\n"
-        "Examine recent git history and return the briefing as JSON."
-    )
-    return await run_agent(repo_path, WEEKLY_BRIEFING_PROMPT, user_prompt)
+    return await run_agent(WEEKLY_BRIEFING_PROMPT, user_prompt, github_token=github_token)
 
 
 # Streaming versions for SSE endpoints
-async def stream_project_analysis(repo_path: str, context: dict) -> AsyncGenerator[dict, None]:
+async def stream_project_analysis(github_token: str, repo_owner: str, repo_name: str, context: str) -> AsyncGenerator[dict, None]:
     user_prompt = (
-        "Analyse the current state of this project.\n\n"
-        f"Project context:\n{json.dumps(context, indent=2, default=str)}\n\n"
-        "Examine git history and repo structure, then return the analysis as JSON."
+        f"Analyse the current state of the {repo_owner}/{repo_name} project.\n\n"
+        f"Project context:\n{context}\n\n"
+        f"Use the GitHub MCP tools to examine recent commits, PRs, and issues. "
+        f"Provide a detailed analysis."
     )
-    async for event in run_agent_stream(repo_path, PROJECT_ANALYST_PROMPT, user_prompt):
-        yield event
-
-
-async def stream_code_review(repo_path: str, pr_number: int, base: str, head: str) -> AsyncGenerator[dict, None]:
-    user_prompt = (
-        f"Review PR #{pr_number}.\n"
-        f"Base branch: {base}, Head branch: {head}\n\n"
-        f"Run `git diff origin/{base}...origin/{head}` to see changes, then examine "
-        f"affected files. Return the review as a JSON object."
-    )
-    async for event in run_agent_stream(repo_path, CODE_REVIEWER_PROMPT, user_prompt):
+    async for event in run_agent_stream(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token):
         yield event

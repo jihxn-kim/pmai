@@ -22,10 +22,8 @@ from app.schemas.ai import (
     JobStatusResponse,
     TestScenarioRequest,
 )
-from app.services.ai.executor import (
-    clone_or_update_repo, cleanup_repo,
-    stream_project_analysis, stream_code_review,
-)
+from app.services.ai.executor import stream_project_analysis
+from app.services.github_service import get_installation_token
 from app.services.ai.worker import build_project_context
 
 router = APIRouter(tags=["ai"])
@@ -50,11 +48,20 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
     db.add(job)
     await db.commit()
 
-    repo_path = None
     try:
-        repo_path = await clone_or_update_repo(
-            project.id, job_id, project.github_repo_url, org.github_installation_id
-        )
+        # Get GitHub token for MCP access (no clone needed)
+        github_token = None
+        if org and org.github_installation_id:
+            try:
+                github_token = await get_installation_token(org.github_installation_id)
+            except Exception:
+                pass  # Continue without GitHub MCP
+
+        # Parse owner/repo from URL
+        parts = (project.github_repo_url or "").rstrip("/").split("/")
+        repo_owner = parts[-2] if len(parts) >= 2 else ""
+        repo_name = parts[-1] if len(parts) >= 1 else ""
+
         context = await build_project_context(db, project.id)
 
         # Use a queue so we can send heartbeats without interrupting the agent stream
@@ -62,7 +69,7 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
 
         async def _feed_queue():
             try:
-                async for event in stream_project_analysis(repo_path, context):
+                async for event in stream_project_analysis(github_token, repo_owner, repo_name, context):
                     await queue.put(event)
             except Exception as e:
                 await queue.put({"type": "error", "message": str(e)[:500]})
@@ -127,9 +134,6 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
         job.error_message = str(exc)[:500]
         await db.commit()
         yield f"data: {json.dumps({'type': 'error', 'message': str(exc)[:300]})}\n\n"
-    finally:
-        if repo_path:
-            cleanup_repo(project.id, job_id)
 
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
