@@ -188,7 +188,10 @@ async def run_agent_stream(
                 yield {"type": "progress", "message": text}
 
     except Exception as exc:
-        yield {"type": "error", "message": str(exc)[:500]}
+        import traceback
+        error_detail = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-500:]}"
+        logger.error("Agent SDK error: %s", error_detail)
+        yield {"type": "error", "message": error_detail[:800]}
         return
 
     if raw_output is None and last_text:
