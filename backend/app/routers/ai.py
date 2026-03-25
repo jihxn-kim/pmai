@@ -49,18 +49,12 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
     db.add(job)
     await db.commit()
 
-    yield f"data: {json.dumps({'type': 'progress', 'message': '📦 GitHub 레포를 클론하고 있습니다...'})}\n\n"
-
     repo_path = None
     try:
         repo_path = await clone_or_update_repo(
             project.id, job_id, project.github_repo_url, org.github_installation_id
         )
-        yield f"data: {json.dumps({'type': 'progress', 'message': '📊 프로젝트 컨텍스트를 수집합니다...'})}\n\n"
-
         context = await build_project_context(db, project.id)
-
-        yield f"data: {json.dumps({'type': 'progress', 'message': '🤖 AI가 분석을 시작합니다...'})}\n\n"
 
         result_data = None
         async for event in stream_project_analysis(repo_path, context):
