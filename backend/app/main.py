@@ -51,7 +51,7 @@ async def lifespan(app_instance: FastAPI):
         scheduler.shutdown()
 
 
-app = FastAPI(title="PM Agent API", lifespan=lifespan)
+app = FastAPI(title="PM Agent API", lifespan=lifespan, redirect_slashes=False)
 
 app.add_middleware(
     CORSMiddleware,
