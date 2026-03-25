@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
@@ -56,13 +57,33 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
         )
         context = await build_project_context(db, project.id)
 
-        async for event in stream_project_analysis(repo_path, context):
+        # Use a queue so we can send heartbeats without interrupting the agent stream
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def _feed_queue():
+            try:
+                async for event in stream_project_analysis(repo_path, context):
+                    await queue.put(event)
+            except Exception as e:
+                await queue.put({"type": "error", "message": str(e)[:500]})
+            finally:
+                await queue.put(None)  # sentinel
+
+        feeder = asyncio.create_task(_feed_queue())
+
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=10.0)
+            except asyncio.TimeoutError:
+                yield ": heartbeat\n\n"
+                continue
+
+            if event is None:
+                break  # stream ended
+
             if event["type"] == "progress":
                 yield f"data: {json.dumps(event)}\n\n"
-            elif event["type"] == "heartbeat":
-                yield ": heartbeat\n\n"
             elif event["type"] == "result":
-                # Save immediately when result arrives
                 result_data = event["data"]
                 review = AIReview(
                     project_id=project.id,
@@ -88,6 +109,8 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                 job.error_message = event["message"][:500]
                 await db.commit()
                 yield f"data: {json.dumps(event)}\n\n"
+
+        await feeder
 
         # If loop ended without result or error, mark failed
         await db.refresh(job)
