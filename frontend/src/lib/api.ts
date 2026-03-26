@@ -35,7 +35,10 @@ api.interceptors.response.use(
         return axios(error.config);
       } catch {
         sessionStorage.removeItem("access_token");
-        if (typeof window !== "undefined") window.location.href = "/login";
+        // Only redirect if not on landing page
+        if (typeof window !== "undefined" && window.location.pathname !== "/") {
+          window.location.href = "/login";
+        }
       }
     }
     return Promise.reject(error);
