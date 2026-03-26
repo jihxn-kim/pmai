@@ -71,12 +71,15 @@ async def send_slack_notification(
             if not channel:
                 return False
 
-        await client.chat_postMessage(channel=channel, text=text, blocks=blocks)
+        resp = await client.chat_postMessage(channel=channel, text=text, blocks=blocks)
+        if not resp.get("ok"):
+            logger.warning(f"Slack API error: {resp.get('error')} (channel={channel})")
+            return False
         return True
 
     except ImportError:
         logger.warning("slack_sdk is not installed; skipping Slack notification")
         return False
     except Exception as e:
-        logger.warning(f"Slack notification failed: {e}")
+        logger.warning(f"Slack notification failed: {e}", exc_info=True)
         return False
