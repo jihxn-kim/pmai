@@ -437,7 +437,7 @@ async def register_issues_to_github(
         "info": "priority: low",
     }
     severity_to_priority = {
-        "critical": TaskPriority.urgent,
+        "critical": TaskPriority.critical,
         "warning": TaskPriority.high,
         "info": TaskPriority.medium,
     }
