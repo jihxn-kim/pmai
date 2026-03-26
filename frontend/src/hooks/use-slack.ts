@@ -67,7 +67,7 @@ export function useSetOrgChannel(orgId: string) {
   return useMutation({
     mutationFn: (channelId: string) =>
       api
-        .patch(`/api/orgs/${orgId}/slack/channel`, { channel_id: channelId })
+        .patch(`/api/orgs/${orgId}/slack/org-channel`, { slack_channel_id: channelId })
         .then((r) => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["slack-status", orgId] });
