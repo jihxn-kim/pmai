@@ -128,7 +128,7 @@ export function GitHubConnect({ projectId, orgId, githubRepoUrl }: GitHubConnect
         GitHub 레포 연결
       </DialogTrigger>
 
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl overflow-visible">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitBranch className="size-4" />
@@ -159,7 +159,7 @@ export function GitHubConnect({ projectId, orgId, githubRepoUrl }: GitHubConnect
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="레포지토리 선택..." />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent side="bottom" sideOffset={4}>
                   {repos.map((repo) => (
                     <SelectItem key={repo.id} value={repo.url}>
                       <div className="flex items-center gap-1.5">
