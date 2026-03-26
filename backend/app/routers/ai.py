@@ -358,6 +358,11 @@ async def delete_review(
     review = result.scalar_one_or_none()
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
+    # Clear FK references in job queue before deleting
+    from sqlalchemy import update
+    await db.execute(
+        update(AIJobQueue).where(AIJobQueue.ai_review_id == review_id).values(ai_review_id=None)
+    )
     await db.delete(review)
     await db.commit()
 
