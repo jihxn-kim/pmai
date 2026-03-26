@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_signing_secret: str = ""
+    slack_redirect_uri: str = "http://localhost:8000/api/slack/oauth/callback"
 
     # Google Calendar
     google_client_id: str = ""

@@ -138,7 +138,7 @@ async def slack_oauth_start(
         raise HTTPException(status_code=501, detail="Slack OAuth is not configured")
 
     scopes = "channels:read,chat:write,app_mentions:read,users:read"
-    redirect_uri = f"{settings.frontend_url}/slack/callback"
+    redirect_uri = settings.slack_redirect_uri
     state = str(org_id)
     url = (
         f"https://slack.com/oauth/v2/authorize"
@@ -165,7 +165,7 @@ async def slack_oauth_callback(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid state parameter")
 
-    redirect_uri = f"{settings.frontend_url}/slack/callback"
+    redirect_uri = settings.slack_redirect_uri
 
     async with httpx.AsyncClient() as http_client:
         resp = await http_client.post(
@@ -207,7 +207,10 @@ async def slack_oauth_callback(
     await db.commit()
     await db.refresh(workspace)
 
-    return RedirectResponse(url=f"{settings.frontend_url}/settings/slack?connected=true")
+    from app.models.organization import Organization
+    org = await db.get(Organization, org_id)
+    org_slug = org.slug if org else ""
+    return RedirectResponse(url=f"{settings.frontend_url}/org/{org_slug}/settings?slack=connected")
 
 
 # ---------------------------------------------------------------------------
