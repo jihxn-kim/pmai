@@ -178,7 +178,7 @@ async def run_agent_stream(
                 )
                 break
 
-            # Capture assistant text as fallback
+            # Capture assistant text as fallback (no progress yield — delta already sent above)
             if hasattr(message, "content"):
                 content = message.content
                 if isinstance(content, list):
@@ -187,11 +187,6 @@ async def run_agent_stream(
                             last_text = block.text
                 elif isinstance(content, str) and content:
                     last_text = content
-
-            # Yield progress for complete AssistantMessages
-            text = _extract_message_text(message)
-            if text:
-                yield {"type": "progress", "message": text}
 
     except Exception as exc:
         import traceback
