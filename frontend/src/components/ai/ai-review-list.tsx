@@ -26,6 +26,7 @@ interface AIReview {
 
 interface AIReviewListProps {
   projectId: string;
+  selectedId?: string | null;
   onSelect?: (review: AIReview) => void;
 }
 
@@ -61,7 +62,7 @@ function formatRelativeTime(dateStr: string): string {
   return `${days}d ago`;
 }
 
-export function AIReviewList({ projectId, onSelect }: AIReviewListProps) {
+export function AIReviewList({ projectId, selectedId, onSelect }: AIReviewListProps) {
   const { data, isLoading, isError } = useAIReviews(projectId);
   const deleteReview = useDeleteReview(projectId);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -108,7 +109,8 @@ export function AIReviewList({ projectId, onSelect }: AIReviewListProps) {
               key={review.id}
               className={cn(
                 "flex items-start gap-3 px-4 py-3",
-                onSelect && "cursor-pointer hover:bg-muted/50 transition-colors"
+                onSelect && "cursor-pointer hover:bg-muted/50 transition-colors",
+                selectedId === review.id && "bg-muted/70 border-l-2 border-l-primary"
               )}
               onClick={() => onSelect?.(review)}
             >

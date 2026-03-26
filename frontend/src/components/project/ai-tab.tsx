@@ -2,9 +2,9 @@
 
 import { useState, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRequestTestScenarios } from "@/hooks/use-ai";
+import { useRequestTestScenarios, useAIReviews } from "@/hooks/use-ai";
 import { AIReviewList } from "@/components/ai/ai-review-list";
-import { AIReviewDetail } from "@/components/ai/ai-review-detail";
+import { AIReviewInline } from "@/components/ai/ai-review-inline";
 import type { AIReview } from "@/components/ai/ai-review-detail";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Brain, FlaskConical, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Brain, FlaskConical, Loader2, CheckCircle2, XCircle, ChevronUp } from "lucide-react";
 
 interface AITabProps {
   projectId: string;
@@ -29,13 +29,15 @@ interface ProgressEntry {
 
 export function AITab({ projectId }: AITabProps) {
   const queryClient = useQueryClient();
-  const [selectedReview, setSelectedReview] = useState<AIReview | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
   const [testDialogOpen, setTestDialogOpen] = useState(false);
   const [prNumber, setPrNumber] = useState("");
   const [filePaths, setFilePaths] = useState("");
 
   const testScenarios = useRequestTestScenarios(projectId);
+  const { data: reviewsData } = useAIReviews(projectId);
+  const reviews: AIReview[] = Array.isArray(reviewsData) ? reviewsData : [];
+  const selectedReview = reviews.find((r) => r.id === selectedReviewId) || null;
 
   // SSE streaming state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -49,6 +51,7 @@ export function AITab({ projectId }: AITabProps) {
     setAnalyzeStatus("running");
     setProgressLog([]);
     setErrorMessage("");
+    setSelectedReviewId(null);
 
     try {
       const token = sessionStorage.getItem("access_token");
@@ -90,16 +93,17 @@ export function AITab({ projectId }: AITabProps) {
 
             if (event.type === "progress") {
               setProgressLog((prev) => [...prev, { message: event.message, timestamp: now }]);
-              // Auto-scroll
               setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
             } else if (event.type === "result") {
               setAnalyzeStatus("done");
               queryClient.invalidateQueries({ queryKey: ["ai-reviews", projectId] });
+              // Auto-select the new review
+              if (event.review_id) {
+                setSelectedReviewId(event.review_id);
+              }
             } else if (event.type === "error") {
               setAnalyzeStatus("error");
               setErrorMessage(event.message);
-            } else if (event.type === "done") {
-              // Stream ended
             }
           } catch {
             // ignore parse errors
@@ -111,7 +115,6 @@ export function AITab({ projectId }: AITabProps) {
       setErrorMessage(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsAnalyzing(false);
-      // Reset status after delay
       setTimeout(() => {
         if (analyzeStatus !== "error") setAnalyzeStatus("idle");
       }, 5000);
@@ -140,7 +143,7 @@ export function AITab({ projectId }: AITabProps) {
           ) : (
             <Brain className="mr-1.5 size-4" />
           )}
-          Analyze Project
+          프로젝트 분석
         </Button>
 
         <Button
@@ -154,12 +157,12 @@ export function AITab({ projectId }: AITabProps) {
           ) : (
             <FlaskConical className="mr-1.5 size-4" />
           )}
-          Generate Tests
+          테스트 생성
         </Button>
       </div>
 
       {/* Completion banner */}
-      {analyzeStatus === "done" && (
+      {analyzeStatus === "done" && !selectedReview && (
         <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
           <CheckCircle2 className="size-4" />
           AI 분석이 완료되었습니다.
@@ -198,42 +201,52 @@ export function AITab({ projectId }: AITabProps) {
       {/* Review list */}
       <AIReviewList
         projectId={projectId}
+        selectedId={selectedReviewId}
         onSelect={(review) => {
-          setSelectedReview(review);
-          setDetailOpen(true);
+          setSelectedReviewId(selectedReviewId === review.id ? null : review.id);
         }}
       />
 
-      {/* Review detail dialog */}
-      <AIReviewDetail
-        review={selectedReview}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-        projectId={projectId}
-      />
+      {/* Inline review detail (expands below the list) */}
+      {selectedReview && (
+        <div className="rounded-lg border bg-card">
+          <div className="flex items-center justify-between px-4 py-3 border-b">
+            <h3 className="font-semibold text-sm">분석 결과</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedReviewId(null)}
+            >
+              <ChevronUp className="size-4 mr-1" />
+              접기
+            </Button>
+          </div>
+          <AIReviewInline review={selectedReview} projectId={projectId} />
+        </div>
+      )}
 
       {/* Generate tests dialog */}
       <Dialog open={testDialogOpen} onOpenChange={setTestDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Generate Test Scenarios</DialogTitle>
+            <DialogTitle>테스트 시나리오 생성</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="pr-number">PR Number (optional)</Label>
+              <Label htmlFor="pr-number">PR 번호 (선택)</Label>
               <Input
                 id="pr-number"
                 type="number"
-                placeholder="e.g. 42"
+                placeholder="예: 42"
                 value={prNumber}
                 onChange={(e) => setPrNumber(e.target.value)}
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="file-paths">File Paths (optional, comma-separated)</Label>
+              <Label htmlFor="file-paths">파일 경로 (선택, 쉼표 구분)</Label>
               <Input
                 id="file-paths"
-                placeholder="e.g. src/auth.py, src/api.py"
+                placeholder="예: src/auth.py, src/api.py"
                 value={filePaths}
                 onChange={(e) => setFilePaths(e.target.value)}
               />
@@ -241,10 +254,10 @@ export function AITab({ projectId }: AITabProps) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTestDialogOpen(false)}>
-              Cancel
+              취소
             </Button>
             <Button onClick={handleGenerateTests} disabled={testScenarios.isPending}>
-              {testScenarios.isPending ? "Generating..." : "Generate"}
+              {testScenarios.isPending ? "생성 중..." : "생성"}
             </Button>
           </DialogFooter>
         </DialogContent>
