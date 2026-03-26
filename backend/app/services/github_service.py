@@ -270,6 +270,37 @@ async def verify_webhook_signature(request: Request) -> bytes:
     return body
 
 
+async def create_github_issue(
+    installation_id: int,
+    owner: str,
+    repo: str,
+    title: str,
+    body: str,
+    labels: list[str] | None = None,
+) -> int | None:
+    """Create a GitHub issue. Returns the issue number or None on failure."""
+    try:
+        token = await get_installation_token(installation_id)
+        payload = {"title": title, "body": body}
+        if labels:
+            payload["labels"] = labels
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"https://api.github.com/repos/{owner}/{repo}/issues",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                },
+                json=payload,
+            )
+            if resp.status_code not in (200, 201):
+                return None
+            return resp.json().get("number")
+    except Exception:
+        return None
+
+
 async def resolve_github_user(db: AsyncSession, github_user: dict) -> uuid.UUID | None:
     if not github_user:
         return None

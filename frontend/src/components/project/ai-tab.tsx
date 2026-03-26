@@ -209,6 +209,7 @@ export function AITab({ projectId }: AITabProps) {
         review={selectedReview}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+        projectId={projectId}
       />
 
       {/* Generate tests dialog */}

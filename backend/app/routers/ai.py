@@ -28,6 +28,33 @@ from app.services.github_service import get_installation_token
 router = APIRouter(tags=["ai"])
 
 
+import re
+
+def _parse_issues(text: str) -> list[dict]:
+    """Extract structured issues from ```json:issues block in AI output."""
+    pattern = r"```json:issues\s*\n(.*?)```"
+    match = re.search(pattern, text, re.DOTALL)
+    if not match:
+        return []
+    try:
+        issues = json.loads(match.group(1))
+        if not isinstance(issues, list):
+            return []
+        result = []
+        for i, issue in enumerate(issues):
+            result.append({
+                "id": str(uuid.uuid4()),
+                "title": issue.get("title", ""),
+                "description": issue.get("description", ""),
+                "severity": issue.get("severity", "info"),
+                "category": issue.get("category", "bug"),
+                "status": "pending",
+            })
+        return result
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
 async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession):
     """SSE generator for project analysis."""
     project = await db.get(Project, project_id)
@@ -89,6 +116,8 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                 yield f"data: {json.dumps(event)}\n\n"
             elif event["type"] == "result":
                 result_text = event["data"]  # Now plain text, not dict
+                # Parse structured issues from ```json:issues block
+                issues = _parse_issues(result_text)
                 # Take first 200 chars as summary, full text in detail
                 summary = result_text[:200] + "..." if len(result_text) > 200 else result_text
                 review = AIReview(
@@ -97,7 +126,7 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                     status=AIReviewStatus.completed,
                     summary=summary,
                     detail={"text": result_text},
-                    suggestions=[],
+                    suggestions=issues,
                     requested_by=user_id,
                     completed_at=datetime.now(timezone.utc),
                 )
@@ -264,3 +293,85 @@ async def get_review(
     if review is None:
         raise HTTPException(status_code=404, detail="Review not found")
     return review
+
+
+from pydantic import BaseModel
+
+
+class RegisterIssuesRequest(BaseModel):
+    issue_ids: list[str]
+
+
+@router.post("/api/projects/{project_id}/ai/reviews/{review_id}/register-issues")
+async def register_issues_to_github(
+    project_id: uuid.UUID,
+    review_id: uuid.UUID,
+    body: RegisterIssuesRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Register selected AI-discovered issues as GitHub issues."""
+    from app.services.github_service import create_github_issue
+
+    review = await db.get(AIReview, review_id)
+    if not review or review.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    project = await db.get(Project, project_id)
+    if not project or not project.github_repo_url:
+        raise HTTPException(status_code=400, detail="Project has no GitHub repo")
+
+    org = await db.get(Organization, project.org_id)
+    if not org or not org.github_installation_id:
+        raise HTTPException(status_code=400, detail="GitHub App not installed")
+
+    parts = (project.github_repo_url or "").rstrip("/").split("/")
+    repo_owner = parts[-2] if len(parts) >= 2 else ""
+    repo_name = parts[-1] if len(parts) >= 1 else ""
+
+    suggestions = review.suggestions or []
+    selected_ids = set(body.issue_ids)
+    created = []
+    failed = []
+
+    severity_labels = {
+        "critical": "priority: critical",
+        "warning": "priority: high",
+        "info": "priority: low",
+    }
+
+    for issue in suggestions:
+        if issue.get("id") not in selected_ids:
+            continue
+
+        label = severity_labels.get(issue.get("severity", "info"), "priority: low")
+        category = issue.get("category", "bug")
+        issue_body = (
+            f"{issue.get('description', '')}\n\n"
+            f"---\n"
+            f"*AI 분석에서 발견됨 | 심각도: {issue.get('severity', 'info')} | 카테고리: {category}*"
+        )
+
+        issue_number = await create_github_issue(
+            installation_id=org.github_installation_id,
+            owner=repo_owner,
+            repo=repo_name,
+            title=f"[AI] {issue.get('title', 'Untitled')}",
+            body=issue_body,
+            labels=[label, f"ai:{category}"],
+        )
+
+        if issue_number:
+            issue["status"] = "registered"
+            issue["github_issue_number"] = issue_number
+            created.append({"id": issue["id"], "github_issue_number": issue_number})
+        else:
+            failed.append({"id": issue["id"], "error": "GitHub API 호출 실패"})
+
+    # Update suggestions in DB
+    review.suggestions = suggestions
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(review, "suggestions")
+    await db.commit()
+
+    return {"created": created, "failed": failed}
