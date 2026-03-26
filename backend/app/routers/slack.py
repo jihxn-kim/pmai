@@ -351,17 +351,24 @@ async def set_org_channel(
             detail="Slack workspace not connected",
         )
 
+    old_channel_id = workspace.slack_org_channel_id
     workspace.slack_org_channel_id = body.slack_channel_id
     await db.commit()
     await db.refresh(workspace)
 
-    # Auto-join the bot to the channel
     try:
         from slack_sdk.web.async_client import AsyncWebClient
         client = AsyncWebClient(token=workspace.slack_bot_token)
+        # Leave old channel
+        if old_channel_id and old_channel_id != body.slack_channel_id:
+            try:
+                await client.conversations_leave(channel=old_channel_id)
+            except Exception:
+                pass
+        # Join new channel
         await client.conversations_join(channel=body.slack_channel_id)
     except Exception:
-        pass  # public channel join may fail for private channels, that's ok
+        pass
 
     return SlackStatusResponse(
         connected=True,
