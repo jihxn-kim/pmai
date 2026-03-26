@@ -363,12 +363,13 @@ async def set_org_channel(
         if old_channel_id and old_channel_id != body.slack_channel_id:
             try:
                 await client.conversations_leave(channel=old_channel_id)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to leave old channel: {e}")
         # Join new channel
-        await client.conversations_join(channel=body.slack_channel_id)
-    except Exception:
-        pass
+        resp = await client.conversations_join(channel=body.slack_channel_id)
+        logger.info(f"Bot joined channel {body.slack_channel_id}: {resp.get('ok')}")
+    except Exception as e:
+        logger.warning(f"Failed to join channel: {e}")
 
     return SlackStatusResponse(
         connected=True,
