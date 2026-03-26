@@ -159,7 +159,7 @@ export function GitHubConnect({ projectId, orgId, githubRepoUrl }: GitHubConnect
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="레포지토리 선택..." />
                 </SelectTrigger>
-                <SelectContent className="max-h-[200px]">
+                <SelectContent>
                   {repos.map((repo) => (
                     <SelectItem key={repo.id} value={repo.url}>
                       <div className="flex items-center gap-1.5">
