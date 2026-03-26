@@ -28,7 +28,7 @@ export function useDeleteOrg() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (orgId: string) =>
-      api.delete(`/api/orgs/${orgId}`).then(r => r.data),
+      api.delete(`/api/orgs/${orgId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orgs"] });
     },

@@ -52,7 +52,7 @@ export function useDeleteReview(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (reviewId: string) =>
-      api.delete(`/api/projects/${projectId}/ai/reviews/${reviewId}`).then(r => r.data),
+      api.delete(`/api/projects/${projectId}/ai/reviews/${reviewId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ai-reviews", projectId] });
       qc.invalidateQueries({ queryKey: ["ai-review", projectId] });

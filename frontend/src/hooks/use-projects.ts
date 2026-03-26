@@ -40,7 +40,7 @@ export function useDeleteProject() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (projectId: string) =>
-      api.delete(`/api/projects/${projectId}`).then((r) => r.data),
+      api.delete(`/api/projects/${projectId}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["org-dashboard"] });
       qc.invalidateQueries({ queryKey: ["orgs"] });
