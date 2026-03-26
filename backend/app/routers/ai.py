@@ -191,9 +191,15 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                 # Slack notification
                 try:
                     from app.services.slack.notifications import send_slack_notification
+                    issue_count = len(issues)
+                    slack_text = (
+                        f"📊 *AI 프로젝트 분석 완료: {project.name}*\n"
+                        f"발견된 이슈: {issue_count}건\n"
+                        f"자세히 보기 → {settings.frontend_url}"
+                    )
                     await send_slack_notification(
                         db, org_id=project.org_id, channel_type="org",
-                        text=f"📊 AI 프로젝트 분석 완료: {project.name}\n{summary}",
+                        text=slack_text,
                     )
                 except Exception:
                     pass
