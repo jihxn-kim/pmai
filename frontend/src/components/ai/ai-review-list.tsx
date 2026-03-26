@@ -1,8 +1,18 @@
 "use client";
 
-import { useAIReviews } from "@/hooks/use-ai";
+import { useState } from "react";
+import { useAIReviews, useDeleteReview } from "@/hooks/use-ai";
 import { cn } from "@/lib/utils";
-import { Brain } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Brain, Trash2 } from "lucide-react";
 
 interface AIReview {
   id: string;
@@ -53,8 +63,11 @@ function formatRelativeTime(dateStr: string): string {
 
 export function AIReviewList({ projectId, onSelect }: AIReviewListProps) {
   const { data, isLoading, isError } = useAIReviews(projectId);
+  const deleteReview = useDeleteReview(projectId);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const reviews: AIReview[] = Array.isArray(data) ? data : [];
+  const reviewToDelete = reviews.find((r) => r.id === confirmDeleteId);
 
   if (isLoading) {
     return (
@@ -82,51 +95,105 @@ export function AIReviewList({ projectId, onSelect }: AIReviewListProps) {
   }
 
   return (
-    <ul className="divide-y rounded-xl border">
-      {reviews.map((review) => {
-        const reviewType = review.type || review.review_type || "analysis";
-        const type = typeConfig[reviewType] ?? typeConfig.analysis;
-        const isPending =
-          review.status === "pending" || review.status === "running";
+    <>
+      <ul className="divide-y rounded-xl border">
+        {reviews.map((review) => {
+          const reviewType = review.type || review.review_type || "analysis";
+          const type = typeConfig[reviewType] ?? typeConfig.analysis;
+          const isPending =
+            review.status === "pending" || review.status === "running";
 
-        return (
-          <li
-            key={review.id}
-            className={cn(
-              "flex items-start gap-3 px-4 py-3",
-              onSelect && "cursor-pointer hover:bg-muted/50 transition-colors"
-            )}
-            onClick={() => onSelect?.(review)}
-          >
-            <span
+          return (
+            <li
+              key={review.id}
               className={cn(
-                "mt-0.5 inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                type.className
+                "flex items-start gap-3 px-4 py-3",
+                onSelect && "cursor-pointer hover:bg-muted/50 transition-colors"
               )}
+              onClick={() => onSelect?.(review)}
             >
-              {type.label}
-            </span>
-
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">
-                {review.summary ?? "(Processing...)"}
-              </p>
-              {isPending && (
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Running...
-                </p>
-              )}
-            </div>
-
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              <span className="text-xs text-muted-foreground">
-                {formatRelativeTime(review.created_at)}
+              <span
+                className={cn(
+                  "mt-0.5 inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                  type.className
+                )}
+              >
+                {type.label}
               </span>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm">
+                  {review.summary ?? "(Processing...)"}
+                </p>
+                {isPending && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Running...
+                  </p>
+                )}
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {formatRelativeTime(review.created_at)}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDeleteId(review.id);
+                  }}
+                  aria-label="Delete review"
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* Confirm delete dialog */}
+      <Dialog
+        open={!!confirmDeleteId}
+        onOpenChange={(open) => !open && setConfirmDeleteId(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete AI Review</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this{" "}
+              {reviewToDelete
+                ? (typeConfig[reviewToDelete.type || reviewToDelete.review_type || "analysis"]?.label ?? "AI review")
+                : "AI review"}
+              ? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDeleteId(null)}
+              disabled={deleteReview.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() =>
+                confirmDeleteId &&
+                deleteReview.mutate(confirmDeleteId, {
+                  onSuccess: () => setConfirmDeleteId(null),
+                })
+              }
+              disabled={deleteReview.isPending}
+            >
+              {deleteReview.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

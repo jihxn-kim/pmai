@@ -295,6 +295,23 @@ async def get_review(
     return review
 
 
+@router.delete("/api/projects/{project_id}/ai/reviews/{review_id}", status_code=204)
+async def delete_review(
+    project_id: uuid.UUID,
+    review_id: uuid.UUID,
+    _user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(AIReview).where(AIReview.id == review_id, AIReview.project_id == project_id)
+    )
+    review = result.scalar_one_or_none()
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    await db.delete(review)
+    await db.commit()
+
+
 from pydantic import BaseModel
 
 

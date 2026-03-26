@@ -1,8 +1,9 @@
 "use client";
 
 import { use, useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
-import { useOrgs, useOrgMembers } from "@/hooks/use-orgs";
+import { useOrgs, useOrgMembers, useDeleteOrg } from "@/hooks/use-orgs";
 import api from "@/lib/api";
 import { MemberList, type Member } from "@/components/org/member-list";
 import { SlackConnect } from "@/components/slack/slack-connect";
@@ -22,13 +23,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle2, AlertCircle, UserPlus } from "lucide-react";
+import { CheckCircle2, AlertCircle, UserPlus, Trash2 } from "lucide-react";
 
 interface OrgSettingsPageProps {
   params: Promise<{ slug: string }>;
@@ -38,6 +47,9 @@ const ROLES = ["owner", "admin", "member"];
 
 export default function OrgSettingsPage({ params }: OrgSettingsPageProps) {
   const { slug } = use(params);
+  const router = useRouter();
+  const deleteOrg = useDeleteOrg();
+  const [confirmDeleteOrg, setConfirmDeleteOrg] = useState(false);
 
   const { data: orgs, isLoading: orgsLoading, refetch: refetchOrgs } = useOrgs();
 
@@ -357,6 +369,77 @@ export default function OrgSettingsPage({ params }: OrgSettingsPageProps) {
           </CardContent>
         </Card>
       )}
+
+      {/* ── Danger Zone ── */}
+      <Separator />
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="text-destructive">Danger Zone</CardTitle>
+          <CardDescription>
+            Irreversible actions. Please proceed with caution.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Delete Organization</p>
+              <p className="text-xs text-muted-foreground">
+                Permanently delete this organization and all of its projects,
+                tasks, and data.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              onClick={() => setConfirmDeleteOrg(true)}
+              className="gap-1.5"
+            >
+              <Trash2 className="size-4" />
+              Delete
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Confirm delete org dialog */}
+      <Dialog
+        open={confirmDeleteOrg}
+        onOpenChange={(open) => !open && setConfirmDeleteOrg(false)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Organization</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <strong>{org.name}</strong>? All projects, tasks, members, and
+              integrations will be permanently removed. This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDeleteOrg(false)}
+              disabled={deleteOrg.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() =>
+                deleteOrg.mutate(orgId, {
+                  onSuccess: () => {
+                    setConfirmDeleteOrg(false);
+                    router.push("/me");
+                  },
+                })
+              }
+              disabled={deleteOrg.isPending}
+            >
+              {deleteOrg.isPending ? "Deleting..." : "Delete Organization"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

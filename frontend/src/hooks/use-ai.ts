@@ -48,6 +48,18 @@ export function useRequestReview(projectId: string) {
   });
 }
 
+export function useDeleteReview(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (reviewId: string) =>
+      api.delete(`/api/projects/${projectId}/ai/reviews/${reviewId}`).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ai-reviews", projectId] });
+      qc.invalidateQueries({ queryKey: ["ai-review", projectId] });
+    },
+  });
+}
+
 export function useRequestTestScenarios(projectId: string) {
   const qc = useQueryClient();
   return useMutation({

@@ -1,11 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_org_role
-from app.models.organization import OrgMember, OrgRole
+from app.models.organization import Organization, OrgMember, OrgRole
 from app.models.user import User
 from app.schemas.organization import (
     MemberAdd,
@@ -58,6 +59,26 @@ async def update_org(
 ):
     org = await org_service.update_org(db, org_id, body.name, body.slug)
     return org
+
+
+@router.delete("/{org_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_organization(
+    org_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    org = await db.get(Organization, org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    # Check user is owner
+    member = await db.execute(
+        select(OrgMember).where(OrgMember.org_id == org_id, OrgMember.user_id == user.id)
+    )
+    m = member.scalar_one_or_none()
+    if not m or m.role != OrgRole.owner:
+        raise HTTPException(status_code=403, detail="Only the owner can delete the organization")
+    await db.delete(org)
+    await db.commit()
 
 
 @router.get("/{org_id}/members", response_model=list[MemberResponse])
