@@ -188,6 +188,16 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                 job.completed_at = datetime.now(timezone.utc)
                 await db.commit()
 
+                # Slack notification
+                try:
+                    from app.services.slack.notifications import send_slack_notification
+                    await send_slack_notification(
+                        db, org_id=project.org_id, channel_type="org",
+                        text=f"📊 AI 프로젝트 분석 완료: {project.name}\n{summary}",
+                    )
+                except Exception:
+                    pass
+
                 yield f"data: {json.dumps({'type': 'result', 'review_id': str(review.id)})}\n\n"
             elif event["type"] == "error":
                 job.status = JobStatus.failed
