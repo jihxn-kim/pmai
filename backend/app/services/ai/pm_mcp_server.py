@@ -52,6 +52,16 @@ async def list_tools() -> list[types.Tool]:
             description="Get pull requests for the project with state and review status.",
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
+        types.Tool(
+            name="get_recent_ai_reviews",
+            description="Get recent AI analysis/review results for the project.",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
+        types.Tool(
+            name="get_project_activity",
+            description="Get recent activity log: commits, PR events, task changes.",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
     ]
 
 
@@ -66,6 +76,8 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             "get_project_issues": "issues",
             "get_project_progress": "progress",
             "get_pull_requests": "pull_requests",
+            "get_recent_ai_reviews": "ai_reviews",
+            "get_project_activity": "activity",
         }
         query_name = query_map.get(name)
         if not query_name:

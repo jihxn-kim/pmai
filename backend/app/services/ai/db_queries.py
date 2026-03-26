@@ -146,4 +146,49 @@ async def execute_db_query(db: AsyncSession, query_name: str, params: dict) -> d
             ],
         }
 
+    elif query_name == "ai_reviews":
+        from app.models.ai_review import AIReview
+        result = await db.execute(
+            select(AIReview).where(AIReview.project_id == project_id)
+            .order_by(AIReview.created_at.desc())
+            .limit(5)
+        )
+        reviews = result.scalars().all()
+        return {
+            "total": len(reviews),
+            "reviews": [
+                {
+                    "id": str(r.id),
+                    "type": r.type.value,
+                    "status": r.status.value,
+                    "summary": r.summary,
+                    "created_at": str(r.created_at),
+                    "completed_at": str(r.completed_at) if r.completed_at else None,
+                }
+                for r in reviews
+            ],
+        }
+
+    elif query_name == "activity":
+        from app.models.activity_log import ActivityLog
+        result = await db.execute(
+            select(ActivityLog).where(ActivityLog.project_id == project_id)
+            .order_by(ActivityLog.created_at.desc())
+            .limit(20)
+        )
+        logs = result.scalars().all()
+        return {
+            "total": len(logs),
+            "activities": [
+                {
+                    "event_type": log.event_type,
+                    "title": log.title,
+                    "description": log.description,
+                    "actor": log.actor,
+                    "created_at": str(log.created_at),
+                }
+                for log in logs
+            ],
+        }
+
     return {"error": f"Unknown query: {query_name}"}
