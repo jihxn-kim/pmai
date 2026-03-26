@@ -18,7 +18,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    const detail = error.response?.data?.detail || "";
+    const isAuthError = status === 401 || (status === 403 && (detail === "Not authenticated" || detail === "Invalid or expired token"));
+
+    if (isAuthError && !error.config._retry) {
+      error.config._retry = true;
       try {
         const { data } = await axios.post(
           `${API_URL}/api/auth/refresh`,
