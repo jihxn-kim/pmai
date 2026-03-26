@@ -426,8 +426,7 @@ async def register_issues_to_github(
     )
     username_to_id = {u.github_username: u.id for u in members_result.scalars() if u.github_username}
 
-    import logging
-    logging.getLogger(__name__).info(f"username_to_id: {username_to_id}")
+    print(f"[DEBUG] username_to_id: {username_to_id}")
 
     suggestions = review.suggestions or []
     selected_ids = set(body.issue_ids)
@@ -473,7 +472,7 @@ async def register_issues_to_github(
             # Create a task with AI-recommended assignee
             assignee_username = issue.get("recommended_assignee")
             assignee_id = username_to_id.get(assignee_username) if assignee_username else None
-            logging.getLogger(__name__).info(f"assignee: {assignee_username} -> {assignee_id}")
+            print(f"[DEBUG] assignee: '{assignee_username}' -> {assignee_id}")
 
             task = Task(
                 project_id=project_id,
