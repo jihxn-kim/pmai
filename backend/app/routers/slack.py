@@ -137,7 +137,7 @@ async def slack_oauth_start(
     if not settings.slack_client_id:
         raise HTTPException(status_code=501, detail="Slack OAuth is not configured")
 
-    scopes = "channels:read,chat:write,app_mentions:read,users:read"
+    scopes = "channels:read,channels:join,chat:write,app_mentions:read,users:read"
     redirect_uri = settings.slack_redirect_uri
     state = str(org_id)
     url = (
