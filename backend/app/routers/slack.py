@@ -242,6 +242,43 @@ async def slack_status(
     )
 
 
+@router.get("/api/orgs/{org_id}/slack/users")
+async def list_slack_users(
+    org_id: uuid.UUID,
+    _member: OrgMember = Depends(require_org_role(OrgRole.owner, OrgRole.admin)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch users from the connected Slack workspace."""
+    result = await db.execute(
+        select(SlackWorkspace).where(SlackWorkspace.org_id == org_id)
+    )
+    workspace = result.scalar_one_or_none()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Slack not connected")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://slack.com/api/users.list",
+            headers={"Authorization": f"Bearer {workspace.slack_bot_token}"},
+        )
+    data = resp.json()
+    if not data.get("ok"):
+        raise HTTPException(status_code=502, detail=f"Slack API error: {data.get('error')}")
+
+    users = [
+        {
+            "id": u["id"],
+            "name": u.get("real_name") or u.get("name", ""),
+            "display_name": u.get("profile", {}).get("display_name", ""),
+            "avatar": u.get("profile", {}).get("image_48", ""),
+        }
+        for u in data.get("members", [])
+        if not u.get("is_bot") and not u.get("deleted") and u.get("id") != "USLACKBOT"
+    ]
+    users.sort(key=lambda u: u["name"])
+    return {"users": users}
+
+
 @router.get("/api/orgs/{org_id}/slack/channels")
 async def list_slack_channels(
     org_id: uuid.UUID,

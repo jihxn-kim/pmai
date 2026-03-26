@@ -4,10 +4,10 @@ import { useState } from "react";
 import {
   useSlackUserMappings,
   useAddUserMapping,
+  useSlackUsers,
 } from "@/hooks/use-slack";
 import { useOrgMembers } from "@/hooks/use-orgs";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Loader2 } from "lucide-react";
 
 interface Member {
   user_id: string;
@@ -31,25 +32,26 @@ export function UserMapping({ orgId }: UserMappingProps) {
   const { data: mappings, isLoading: mappingsLoading } =
     useSlackUserMappings(orgId);
   const { data: membersData } = useOrgMembers(orgId);
+  const { data: slackUsers, isLoading: slackUsersLoading } = useSlackUsers(orgId);
   const addMapping = useAddUserMapping(orgId);
 
   const members: Member[] = Array.isArray(membersData) ? membersData : [];
   const mappingList = Array.isArray(mappings) ? mappings : [];
 
   const [selectedUserId, setSelectedUserId] = useState("");
-  const [slackUserId, setSlackUserId] = useState("");
+  const [selectedSlackUserId, setSelectedSlackUserId] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedUserId || !slackUserId.trim()) return;
+    if (!selectedUserId || !selectedSlackUserId) return;
     setAddError(null);
     addMapping.mutate(
-      { user_id: selectedUserId, slack_user_id: slackUserId.trim() },
+      { user_id: selectedUserId, slack_user_id: selectedSlackUserId },
       {
         onSuccess: () => {
           setSelectedUserId("");
-          setSlackUserId("");
+          setSelectedSlackUserId("");
         },
         onError: (err: unknown) => {
           const message =
@@ -66,6 +68,11 @@ export function UserMapping({ orgId }: UserMappingProps) {
     return member ? `${member.name} (@${member.github_username})` : userId;
   };
 
+  const getSlackUserName = (slackId: string) => {
+    const user = slackUsers?.find((u) => u.id === slackId);
+    return user ? (user.display_name || user.name) : slackId;
+  };
+
   return (
     <div className="flex flex-col gap-4">
       {/* Existing mappings table */}
@@ -77,15 +84,15 @@ export function UserMapping({ orgId }: UserMappingProps) {
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="pb-2 pr-4 font-medium">멤버</th>
-                <th className="pb-2 font-medium">Slack User ID</th>
+                <th className="pb-2 font-medium">Slack 사용자</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {mappingList.map((mapping) => (
                 <tr key={mapping.id}>
                   <td className="py-2 pr-4">{getMemberName(mapping.user_id)}</td>
-                  <td className="py-2 font-mono text-muted-foreground">
-                    {mapping.slack_user_id}
+                  <td className="py-2 text-muted-foreground">
+                    {getSlackUserName(mapping.slack_user_id)}
                   </td>
                 </tr>
               ))}
@@ -107,13 +114,15 @@ export function UserMapping({ orgId }: UserMappingProps) {
       {/* Add mapping form */}
       <form onSubmit={handleAdd} className="flex flex-col gap-3">
         <h4 className="text-sm font-semibold">매핑 추가</h4>
-        <div className="flex flex-wrap gap-2">
+
+        <div className="flex flex-col gap-2">
+          <Label>멤버</Label>
           <Select
             value={selectedUserId}
-            onValueChange={(v) => v && setSelectedUserId(v)}
+            onValueChange={(v) => setSelectedUserId(v ?? "")}
           >
-            <SelectTrigger className="flex-1 min-w-40">
-              <SelectValue placeholder="멤버 선택" />
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="멤버 선택..." />
             </SelectTrigger>
             <SelectContent>
               {members.map((m) => (
@@ -123,21 +132,45 @@ export function UserMapping({ orgId }: UserMappingProps) {
               ))}
             </SelectContent>
           </Select>
-          <Input
-            value={slackUserId}
-            onChange={(e) => setSlackUserId(e.target.value)}
-            placeholder="Slack User ID (예: U0123456789)"
-            className="flex-1 min-w-40"
-          />
-          <Button
-            type="submit"
-            disabled={
-              addMapping.isPending || !selectedUserId || !slackUserId.trim()
-            }
-          >
-            {addMapping.isPending ? "추가 중..." : "추가"}
-          </Button>
         </div>
+
+        <div className="flex flex-col gap-2">
+          <Label>Slack 사용자</Label>
+          {slackUsersLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Slack 사용자 목록 로딩 중...
+            </div>
+          ) : (
+            <Select
+              value={selectedSlackUserId}
+              onValueChange={(v) => setSelectedSlackUserId(v ?? "")}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Slack 사용자 선택..." />
+              </SelectTrigger>
+              <SelectContent>
+                {slackUsers?.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.display_name || u.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        <Button
+          type="submit"
+          size="sm"
+          disabled={
+            addMapping.isPending || !selectedUserId || !selectedSlackUserId
+          }
+          className="self-start"
+        >
+          {addMapping.isPending ? "추가 중..." : "매핑 추가"}
+        </Button>
+
         {addError && (
           <p className="text-sm text-destructive">{addError}</p>
         )}
