@@ -48,6 +48,7 @@ def _parse_issues(text: str) -> list[dict]:
                 "description": issue.get("description", ""),
                 "severity": issue.get("severity", "info"),
                 "category": issue.get("category", "bug"),
+                "recommended_assignee": issue.get("recommended_assignee"),
                 "status": "pending",
             })
         return result
@@ -327,8 +328,9 @@ async def register_issues_to_github(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Register selected AI-discovered issues as GitHub issues."""
+    """Register selected AI-discovered issues as GitHub issues and create tasks."""
     from app.services.github_service import create_github_issue
+    from app.models.task import Task, TaskStatus, TaskPriority
 
     review = await db.get(AIReview, review_id)
     if not review or review.project_id != project_id:
@@ -346,6 +348,14 @@ async def register_issues_to_github(
     repo_owner = parts[-2] if len(parts) >= 2 else ""
     repo_name = parts[-1] if len(parts) >= 1 else ""
 
+    # Resolve github usernames to user IDs for task assignment
+    from app.models.project import ProjectMember
+    members_result = await db.execute(
+        select(User).join(ProjectMember, ProjectMember.user_id == User.id)
+        .where(ProjectMember.project_id == project_id)
+    )
+    username_to_id = {u.github_username: u.id for u in members_result.scalars() if u.github_username}
+
     suggestions = review.suggestions or []
     selected_ids = set(body.issue_ids)
     created = []
@@ -355,6 +365,11 @@ async def register_issues_to_github(
         "critical": "priority: critical",
         "warning": "priority: high",
         "info": "priority: low",
+    }
+    severity_to_priority = {
+        "critical": TaskPriority.urgent,
+        "warning": TaskPriority.high,
+        "info": TaskPriority.medium,
     }
 
     for issue in suggestions:
@@ -381,7 +396,27 @@ async def register_issues_to_github(
         if issue_number:
             issue["status"] = "registered"
             issue["github_issue_number"] = issue_number
-            created.append({"id": issue["id"], "github_issue_number": issue_number})
+
+            # Create a task with AI-recommended assignee
+            assignee_username = issue.get("recommended_assignee")
+            assignee_id = username_to_id.get(assignee_username) if assignee_username else None
+
+            task = Task(
+                project_id=project_id,
+                title=f"[AI] {issue.get('title', 'Untitled')}",
+                description=issue.get("description", ""),
+                status=TaskStatus.todo,
+                priority=severity_to_priority.get(issue.get("severity", "info"), TaskPriority.medium),
+                assignee_id=assignee_id,
+                github_issue_id=issue_number,
+            )
+            db.add(task)
+
+            created.append({
+                "id": issue["id"],
+                "github_issue_number": issue_number,
+                "task_assignee": assignee_username,
+            })
         else:
             failed.append({"id": issue["id"], "error": "GitHub API 호출 실패"})
 

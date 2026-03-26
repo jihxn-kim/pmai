@@ -27,6 +27,7 @@ export interface AIIssue {
   description: string;
   severity: "critical" | "warning" | "info";
   category: string;
+  recommended_assignee?: string | null;
   status: "pending" | "registered";
   github_issue_number?: number;
 }
@@ -188,6 +189,11 @@ export function AIReviewDetail({ review, open, onOpenChange, projectId }: AIRevi
                           <Badge variant="outline" className="text-xs">
                             {issue.category}
                           </Badge>
+                          {issue.recommended_assignee && (
+                            <Badge variant="outline" className="text-xs">
+                              @{issue.recommended_assignee}
+                            </Badge>
+                          )}
                           {isRegistered && issue.github_issue_number && (
                             <Badge variant="secondary" className="text-xs">
                               #{issue.github_issue_number}
