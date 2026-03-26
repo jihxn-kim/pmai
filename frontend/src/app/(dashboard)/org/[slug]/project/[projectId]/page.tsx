@@ -107,6 +107,7 @@ export default function ProjectDetailPage({ params }: ProjectDetailPageProps) {
           <div className="mt-1.5">
             <GitHubConnect
               projectId={projectId}
+              orgId={project.org_id}
               githubRepoUrl={project.github_repo_url}
             />
           </div>

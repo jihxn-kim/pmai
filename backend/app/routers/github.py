@@ -100,6 +100,48 @@ async def github_installation_status(
     }
 
 
+@router.get("/api/orgs/{org_id}/github/repos")
+async def list_installation_repos(
+    org_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List repositories accessible by the GitHub App installation."""
+    import httpx
+
+    org = await db.get(Organization, org_id)
+    if not org or not org.github_installation_id:
+        return {"repos": []}
+
+    try:
+        token = await github_service.get_installation_token(org.github_installation_id)
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://api.github.com/installation/repositories",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                },
+                params={"per_page": 100},
+            )
+        if resp.status_code != 200:
+            return {"repos": []}
+
+        repos = [
+            {
+                "id": r["id"],
+                "full_name": r["full_name"],
+                "url": r["html_url"],
+                "private": r["private"],
+            }
+            for r in resp.json().get("repositories", [])
+        ]
+        repos.sort(key=lambda r: r["full_name"])
+        return {"repos": repos}
+    except Exception:
+        return {"repos": []}
+
+
 @router.post("/api/webhooks/github")
 async def github_webhook(
     request: Request,
