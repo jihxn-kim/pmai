@@ -71,7 +71,7 @@ export function useSlackDisconnect(orgId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      api.delete(`/api/orgs/${orgId}/slack`),
+      api.delete(`/api/orgs/${orgId}/slack/disconnect`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["slack-status", orgId] });
     },
