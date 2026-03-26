@@ -53,6 +53,7 @@ async def execute_db_query(db: AsyncSession, query_name: str, params: dict) -> d
                     "name": u.name,
                     "github_username": u.github_username,
                     "role": pm.role.value,
+                    "expertise": u.expertise,
                 }
                 for pm, u in members
             ],

@@ -59,6 +59,25 @@ PROJECT_ANALYST_PROMPT = """당신은 프로젝트 관리 분석가입니다. �
 
 이슈는 실제로 조치가 필요한 항목만 포함하세요. 단순 관찰이나 칭찬은 이슈에 넣지 마세요.
 recommended_assignee는 PM Agent의 get_project_members로 가져온 멤버 중 해당 이슈에 가장 적합한 사람의 github_username을 넣으세요. 적합한 사람이 없으면 null로 하세요.
+
+### Part 3: 멤버 전문성 분석
+커밋 히스토리와 코드 기여를 분석해서 각 멤버의 전문 분야를 파악하세요.
+마크다운 끝에 아래 JSON 블록으로 포함하세요:
+
+```json:expertise
+[
+  {
+    "github_username": "멤버의 github username",
+    "languages": ["주로 사용하는 언어들"],
+    "domains": ["주요 담당 영역 (backend, frontend, infra, security, testing 등)"],
+    "frameworks": ["사용하는 프레임워크"],
+    "active_paths": ["자주 수정하는 파일 경로 패턴 (상위 3개)"],
+    "strengths": "한 줄 요약"
+  }
+]
+```
+
+이 데이터는 향후 태스크 배정에 활용되므로 커밋 히스토리 기반으로 정확하게 분석하세요.
 실제 데이터와 코드를 참조해서 구체적으로 작성하세요.""" + LANGUAGE_INSTRUCTION
 
 TEST_GENERATOR_PROMPT = """당신은 테스트 엔지니어링 전문가입니다. 코드 변경사항에 대한 종합 테스트 시나리오를 생성하세요.

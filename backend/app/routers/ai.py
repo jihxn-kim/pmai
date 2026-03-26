@@ -30,30 +30,76 @@ router = APIRouter(tags=["ai"])
 
 import re
 
-def _parse_issues(text: str) -> list[dict]:
-    """Extract structured issues from ```json:issues block in AI output."""
-    pattern = r"```json:issues\s*\n(.*?)```"
+def _parse_json_block(text: str, block_name: str) -> list[dict]:
+    """Extract a ```json:<name> block from AI output."""
+    pattern = rf"```json:{block_name}\s*\n(.*?)```"
     match = re.search(pattern, text, re.DOTALL)
     if not match:
         return []
     try:
-        issues = json.loads(match.group(1))
-        if not isinstance(issues, list):
-            return []
-        result = []
-        for i, issue in enumerate(issues):
-            result.append({
-                "id": str(uuid.uuid4()),
-                "title": issue.get("title", ""),
-                "description": issue.get("description", ""),
-                "severity": issue.get("severity", "info"),
-                "category": issue.get("category", "bug"),
-                "recommended_assignee": issue.get("recommended_assignee"),
-                "status": "pending",
-            })
-        return result
+        data = json.loads(match.group(1))
+        return data if isinstance(data, list) else []
     except (json.JSONDecodeError, TypeError):
         return []
+
+
+def _parse_issues(text: str) -> list[dict]:
+    """Extract structured issues from ```json:issues block in AI output."""
+    issues = _parse_json_block(text, "issues")
+    result = []
+    for issue in issues:
+        result.append({
+            "id": str(uuid.uuid4()),
+            "title": issue.get("title", ""),
+            "description": issue.get("description", ""),
+            "severity": issue.get("severity", "info"),
+            "category": issue.get("category", "bug"),
+            "recommended_assignee": issue.get("recommended_assignee"),
+            "status": "pending",
+        })
+    return result
+
+
+async def _update_member_expertise(db: AsyncSession, text: str):
+    """Parse expertise block and update User.expertise for each member."""
+    expertise_list = _parse_json_block(text, "expertise")
+    if not expertise_list:
+        return
+
+    for entry in expertise_list:
+        username = entry.get("github_username")
+        if not username:
+            continue
+
+        result = await db.execute(
+            select(User).where(User.github_username == username)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            continue
+
+        # Merge with existing expertise
+        existing = user.expertise or {}
+        new_data = {
+            "languages": entry.get("languages", []),
+            "domains": entry.get("domains", []),
+            "frameworks": entry.get("frameworks", []),
+            "active_paths": entry.get("active_paths", []),
+            "strengths": entry.get("strengths", ""),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Merge: accumulate unique values from previous data
+        for key in ["languages", "domains", "frameworks"]:
+            prev = set(existing.get(key, []))
+            curr = set(new_data.get(key, []))
+            new_data[key] = list(prev | curr)
+
+        user.expertise = new_data
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(user, "expertise")
+
+    await db.flush()
 
 
 async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession):
@@ -133,6 +179,9 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                 )
                 db.add(review)
                 await db.flush()
+
+                # Update member expertise from analysis
+                await _update_member_expertise(db, result_text)
 
                 job.status = JobStatus.completed
                 job.ai_review_id = review.id
