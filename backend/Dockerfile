@@ -26,4 +26,4 @@ COPY . .
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
-CMD ["sh", "-c", "if [ -n \"$CLAUDE_CREDENTIALS\" ]; then mkdir -p /home/appuser/.claude && echo \"$CLAUDE_CREDENTIALS\" > /home/appuser/.claude/.credentials.json && chmod 600 /home/appuser/.claude/.credentials.json; fi && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "if [ -n \"$CLAUDE_CREDENTIALS\" ]; then mkdir -p /home/appuser/.claude && echo \"$CLAUDE_CREDENTIALS\" > /home/appuser/.claude/.credentials.json && chmod 600 /home/appuser/.claude/.credentials.json; fi && python -m alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
