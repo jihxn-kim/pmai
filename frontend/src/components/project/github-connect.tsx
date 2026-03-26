@@ -156,7 +156,7 @@ export function GitHubConnect({ projectId, orgId, githubRepoUrl }: GitHubConnect
               </div>
             ) : repos && repos.length > 0 ? (
               <Select value={selectedUrl} onValueChange={(v) => setSelectedUrl(v ?? "")}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="레포지토리 선택..." />
                 </SelectTrigger>
                 <SelectContent className="w-[var(--radix-select-trigger-width)]">

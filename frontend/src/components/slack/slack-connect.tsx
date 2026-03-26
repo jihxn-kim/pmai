@@ -115,7 +115,7 @@ export function SlackConnect({ orgId }: SlackConnectProps) {
           ) : (
             <>
               <Select value={selectedChannel} onValueChange={(v) => setSelectedChannel(v ?? "")}>
-                <SelectTrigger className="flex-1">
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="채널 선택..." />
                 </SelectTrigger>
                 <SelectContent>
