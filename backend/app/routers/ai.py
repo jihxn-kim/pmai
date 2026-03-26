@@ -201,8 +201,8 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                         db, org_id=project.org_id, channel_type="org",
                         text=slack_text,
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[SLACK] notification error: {type(e).__name__}: {e}")
 
                 yield f"data: {json.dumps({'type': 'result', 'review_id': str(review.id)})}\n\n"
             elif event["type"] == "error":
