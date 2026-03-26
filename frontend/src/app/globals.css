@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -127,4 +128,55 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Markdown prose overrides */
+.prose pre {
+  background-color: var(--muted) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 0.5rem;
+  color: var(--foreground) !important;
+}
+
+.prose code {
+  background-color: var(--muted);
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.8em;
+  color: var(--foreground);
+}
+
+.prose pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+}
+
+.prose th {
+  background-color: var(--muted);
+  font-weight: 600;
+}
+
+.prose tr:nth-child(even) {
+  background-color: color-mix(in oklch, var(--muted) 40%, transparent);
+}
+
+.prose h1, .prose h2, .prose h3 {
+  color: var(--foreground);
+}
+
+.prose blockquote {
+  border-left-color: var(--primary);
+  color: var(--muted-foreground);
 }

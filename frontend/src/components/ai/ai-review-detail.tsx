@@ -199,7 +199,7 @@ export function AIReviewDetail({ review, open, onOpenChange, projectId }: AIRevi
 
           {/* Report tab */}
           <TabsContent value="report" className="mt-4">
-            <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:text-base prose-headings:font-semibold prose-p:text-sm prose-p:leading-relaxed prose-li:text-sm prose-table:text-sm prose-code:text-xs prose-pre:text-xs prose-pre:bg-muted prose-pre:border">
+            <div className="prose prose-sm dark:prose-invert max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {cleanedText}
               </ReactMarkdown>
