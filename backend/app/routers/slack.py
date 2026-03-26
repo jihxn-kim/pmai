@@ -355,6 +355,14 @@ async def set_org_channel(
     await db.commit()
     await db.refresh(workspace)
 
+    # Auto-join the bot to the channel
+    try:
+        from slack_sdk.web.async_client import AsyncWebClient
+        client = AsyncWebClient(token=workspace.slack_bot_token)
+        await client.conversations_join(channel=body.slack_channel_id)
+    except Exception:
+        pass  # public channel join may fail for private channels, that's ok
+
     return SlackStatusResponse(
         connected=True,
         slack_team_id=workspace.slack_team_id,
