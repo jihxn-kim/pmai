@@ -133,7 +133,7 @@ async def slack_oauth_start(
     org_id: uuid.UUID,
     _member: OrgMember = Depends(require_org_role(OrgRole.owner, OrgRole.admin)),
 ):
-    """Redirect the user to the Slack OAuth authorisation URL."""
+    """Return the Slack OAuth authorisation URL."""
     if not settings.slack_client_id:
         raise HTTPException(status_code=501, detail="Slack OAuth is not configured")
 
@@ -147,7 +147,7 @@ async def slack_oauth_start(
         f"&redirect_uri={redirect_uri}"
         f"&state={state}"
     )
-    return RedirectResponse(url=url)
+    return {"url": url}
 
 
 @router.get("/api/slack/oauth/callback")

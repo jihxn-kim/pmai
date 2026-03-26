@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import api from "@/lib/api";
 
 interface SlackConnectProps {
   orgId: string;
@@ -39,8 +40,13 @@ export function SlackConnect({ orgId }: SlackConnectProps) {
         </div>
         <Button
           variant="default"
-          onClick={() => {
-            window.location.href = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/orgs/${orgId}/slack/auth`;
+          onClick={async () => {
+            try {
+              const { data } = await api.get(`/api/orgs/${orgId}/slack/auth`);
+              window.location.href = data.url;
+            } catch {
+              // auth error handled by interceptor
+            }
           }}
         >
           Connect Slack
