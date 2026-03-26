@@ -35,6 +35,20 @@ export function useSlackUserMappings(orgId: string) {
   });
 }
 
+export interface SlackChannel {
+  id: string;
+  name: string;
+}
+
+export function useSlackChannels(orgId: string, enabled = true) {
+  return useQuery<SlackChannel[]>({
+    queryKey: ["slack-channels", orgId],
+    queryFn: () =>
+      api.get(`/api/orgs/${orgId}/slack/channels`).then((r) => r.data.channels),
+    enabled: !!orgId && enabled,
+  });
+}
+
 // ── Mutations ──────────────────────────────────────────────────────────────
 
 export function useSlackDisconnect(orgId: string) {

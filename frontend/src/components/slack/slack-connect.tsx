@@ -1,12 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSlackStatus, useSlackDisconnect, useSetOrgChannel } from "@/hooks/use-slack";
+import { useSlackStatus, useSlackDisconnect, useSetOrgChannel, useSlackChannels } from "@/hooks/use-slack";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import api from "@/lib/api";
+import { Hash, Loader2 } from "lucide-react";
 
 interface SlackConnectProps {
   orgId: string;
@@ -16,13 +23,14 @@ export function SlackConnect({ orgId }: SlackConnectProps) {
   const { data: status, isLoading } = useSlackStatus(orgId);
   const disconnect = useSlackDisconnect(orgId);
   const setOrgChannel = useSetOrgChannel(orgId);
+  const { data: channels, isLoading: channelsLoading } = useSlackChannels(orgId, !!status?.connected);
 
-  const [channelId, setChannelId] = useState("");
+  const [selectedChannel, setSelectedChannel] = useState("");
   const [channelSaved, setChannelSaved] = useState(false);
 
   useEffect(() => {
     if (status?.org_channel_id) {
-      setChannelId(status.org_channel_id);
+      setSelectedChannel(status.org_channel_id);
     }
   }, [status?.org_channel_id]);
 
@@ -49,16 +57,15 @@ export function SlackConnect({ orgId }: SlackConnectProps) {
             }
           }}
         >
-          Connect Slack
+          Slack 연결
         </Button>
       </div>
     );
   }
 
-  const handleSaveChannel = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!channelId.trim()) return;
-    setOrgChannel.mutate(channelId.trim(), {
+  const handleSaveChannel = () => {
+    if (!selectedChannel) return;
+    setOrgChannel.mutate(selectedChannel, {
       onSuccess: () => {
         setChannelSaved(true);
         setTimeout(() => setChannelSaved(false), 3000);
@@ -70,6 +77,8 @@ export function SlackConnect({ orgId }: SlackConnectProps) {
     if (!confirm("Slack 연동을 해제하시겠습니까?")) return;
     disconnect.mutate();
   };
+
+  const currentChannelName = channels?.find((c) => c.id === status.org_channel_id)?.name;
 
   return (
     <div className="flex flex-col gap-4">
@@ -90,23 +99,45 @@ export function SlackConnect({ orgId }: SlackConnectProps) {
         </Button>
       </div>
 
-      <form onSubmit={handleSaveChannel} className="flex flex-col gap-2">
-        <Label htmlFor="org-channel-id">조직 기본 채널 ID</Label>
+      <div className="flex flex-col gap-2">
+        <Label>알림 채널</Label>
+        {currentChannelName && !channelSaved && (
+          <p className="text-xs text-muted-foreground">
+            현재: <strong>#{currentChannelName}</strong>
+          </p>
+        )}
         <div className="flex gap-2">
-          <Input
-            id="org-channel-id"
-            value={channelId}
-            onChange={(e) => setChannelId(e.target.value)}
-            placeholder="예: C0123456789"
-            className="flex-1"
-          />
-          <Button
-            type="submit"
-            size="sm"
-            disabled={setOrgChannel.isPending || !channelId.trim()}
-          >
-            {setOrgChannel.isPending ? "저장 중..." : "저장"}
-          </Button>
+          {channelsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              채널 목록 로딩 중...
+            </div>
+          ) : (
+            <>
+              <Select value={selectedChannel} onValueChange={(v) => setSelectedChannel(v ?? "")}>
+                <SelectTrigger className="flex-1">
+                  <SelectValue placeholder="채널 선택..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {channels?.map((ch) => (
+                    <SelectItem key={ch.id} value={ch.id}>
+                      <div className="flex items-center gap-1.5">
+                        <Hash className="size-3.5 text-muted-foreground" />
+                        {ch.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                onClick={handleSaveChannel}
+                disabled={setOrgChannel.isPending || !selectedChannel}
+              >
+                {setOrgChannel.isPending ? "저장 중..." : "저장"}
+              </Button>
+            </>
+          )}
         </div>
         {channelSaved && (
           <p className="text-sm text-green-600">채널이 저장되었습니다.</p>
@@ -114,7 +145,7 @@ export function SlackConnect({ orgId }: SlackConnectProps) {
         {setOrgChannel.isError && (
           <p className="text-sm text-destructive">저장에 실패했습니다.</p>
         )}
-      </form>
+      </div>
     </div>
   );
 }

@@ -242,6 +242,38 @@ async def slack_status(
     )
 
 
+@router.get("/api/orgs/{org_id}/slack/channels")
+async def list_slack_channels(
+    org_id: uuid.UUID,
+    _member: OrgMember = Depends(require_org_role(OrgRole.owner, OrgRole.admin)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch public channels from the connected Slack workspace."""
+    result = await db.execute(
+        select(SlackWorkspace).where(SlackWorkspace.org_id == org_id)
+    )
+    workspace = result.scalar_one_or_none()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Slack not connected")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://slack.com/api/conversations.list",
+            headers={"Authorization": f"Bearer {workspace.slack_bot_token}"},
+            params={"types": "public_channel", "limit": 200, "exclude_archived": "true"},
+        )
+    data = resp.json()
+    if not data.get("ok"):
+        raise HTTPException(status_code=502, detail=f"Slack API error: {data.get('error')}")
+
+    channels = [
+        {"id": ch["id"], "name": ch["name"]}
+        for ch in data.get("channels", [])
+    ]
+    channels.sort(key=lambda c: c["name"])
+    return {"channels": channels}
+
+
 @router.delete(
     "/api/orgs/{org_id}/slack/disconnect",
     status_code=status.HTTP_204_NO_CONTENT,
