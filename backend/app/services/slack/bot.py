@@ -204,7 +204,9 @@ async def handle_mention(
             await _send_reply(bot_token, channel, "요청을 처리하지 못했습니다.")
 
     except Exception as e:
-        logger.warning(f"handle_mention failed: {e}")
+        import traceback
+        print(f"[SLACK BOT ERROR] {type(e).__name__}: {e}")
+        print(traceback.format_exc()[-500:])
         await _send_reply(bot_token, channel, f"오류가 발생했습니다: {str(e)[:200]}")
 
 
