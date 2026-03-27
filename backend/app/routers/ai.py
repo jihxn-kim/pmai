@@ -249,6 +249,96 @@ async def request_analysis(
     )
 
 
+@router.post("/api/projects/{project_id}/ai/qa-flow")
+async def request_qa_flow(
+    project_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream QA flow test with Playwright browser via SSE."""
+    project = await db.execute(select(Project).where(Project.id == project_id))
+    proj = project.scalar_one_or_none()
+    if proj is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return StreamingResponse(
+        _sse_qa_flow(project_id, current_user.id, db),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _sse_qa_flow(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSession):
+    """SSE generator for QA flow testing."""
+    from app.services.ai.executor import stream_qa_flow
+
+    project = await db.get(Project, project_id)
+    if not project:
+        yield f"data: {json.dumps({'type': 'error', 'message': 'Project not found'})}\n\n"
+        return
+
+    org = await db.get(Organization, project.org_id)
+
+    github_token = None
+    if org and org.github_installation_id:
+        try:
+            github_token = await get_installation_token(org.github_installation_id)
+        except Exception:
+            pass
+
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def _feed_queue():
+        try:
+            async for event in stream_qa_flow(
+                frontend_url=settings.frontend_url,
+                github_token=github_token,
+                project_id=str(project_id),
+                org_id=str(project.org_id),
+            ):
+                await queue.put(event)
+        except Exception as e:
+            await queue.put({"type": "error", "message": str(e)[:500]})
+        finally:
+            await queue.put(None)
+
+    feeder = asyncio.create_task(_feed_queue())
+
+    while True:
+        try:
+            event = await asyncio.wait_for(queue.get(), timeout=15.0)
+        except asyncio.TimeoutError:
+            yield ": heartbeat\n\n"
+            continue
+
+        if event is None:
+            break
+
+        if event["type"] == "progress":
+            yield f"data: {json.dumps(event)}\n\n"
+        elif event["type"] == "result":
+            result_text = event["data"]
+            summary = result_text[:200] + "..." if len(result_text) > 200 else result_text
+            review = AIReview(
+                project_id=project.id,
+                type=AIReviewType.test_scenario,
+                status=AIReviewStatus.completed,
+                summary=summary,
+                detail={"text": result_text},
+                suggestions=[],
+                requested_by=user_id,
+                completed_at=datetime.now(timezone.utc),
+            )
+            db.add(review)
+            await db.commit()
+            yield f"data: {json.dumps({'type': 'result', 'review_id': str(review.id)})}\n\n"
+        elif event["type"] == "error":
+            yield f"data: {json.dumps(event)}\n\n"
+
+    await feeder
+    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+
 @router.post(
     "/api/projects/{project_id}/ai/review/{pr_number}",
     response_model=JobCreatedResponse,

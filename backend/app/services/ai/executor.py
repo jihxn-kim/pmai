@@ -13,6 +13,7 @@ from app.config import settings
 from app.services.ai.prompts import (
     CODE_REVIEWER_PROMPT,
     PROJECT_ANALYST_PROMPT,
+    QA_FLOW_PROMPT,
     TEST_GENERATOR_PROMPT,
     WEEKLY_BRIEFING_PROMPT,
 )
@@ -272,6 +273,105 @@ async def run_weekly_briefing(github_token: str, repo_owner: str, repo_name: str
         f"Use the GitHub MCP tools to examine recent activity and provide the briefing."
     )
     return await run_agent(WEEKLY_BRIEFING_PROMPT, user_prompt, github_token=github_token)
+
+
+async def stream_qa_flow(
+    frontend_url: str,
+    github_token: str | None = None,
+    project_id: str | None = None,
+    org_id: str | None = None,
+) -> AsyncGenerator[dict, None]:
+    """Run QA flow test with Playwright browser and stream results."""
+    user_prompt = (
+        f"{frontend_url} 웹 애플리케이션을 직접 방문해서 QA 테스트를 수행하세요.\n\n"
+        f"Playwright 도구로 브라우저를 조작하고, 사용자 플로우를 테스트하세요.\n"
+        f"GitHub MCP와 PM Agent 도구로 프로젝트 구조를 파악한 뒤, 도메인에 맞는 테스트를 설계하세요."
+    )
+
+    allowed_tools = ["mcp__playwright__*"]
+    extra_mcp = {
+        "playwright": {
+            "command": "npx",
+            "args": ["-y", "@anthropic-ai/mcp-server-playwright"],
+        },
+    }
+
+    # Add GitHub MCP
+    if github_token:
+        extra_mcp["github"] = {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
+            "env": {"GITHUB_TOKEN": github_token},
+        }
+        allowed_tools.append("mcp__github__*")
+
+    # Add PM Agent MCP
+    if org_id or project_id:
+        import os
+        extra_mcp["pm_agent"] = {
+            "command": "python",
+            "args": ["-m", "app.services.ai.pm_mcp_server", org_id or "", project_id or ""],
+            "env": {"DATABASE_URL": os.environ.get("DATABASE_URL", "")},
+        }
+        allowed_tools.append("mcp__pm_agent__*")
+
+    options_kwargs = {
+        "allowed_tools": allowed_tools,
+        "system_prompt": QA_FLOW_PROMPT,
+        "model": settings.ai_model,
+        "max_turns": settings.ai_max_turns,
+        "permission_mode": "bypassPermissions",
+        "mcp_servers": extra_mcp,
+        "include_partial_messages": True,
+    }
+
+    options = ClaudeAgentOptions(**options_kwargs)
+
+    raw_output = None
+    last_text = None
+    try:
+        async for message in query(prompt=user_prompt, options=options):
+            if StreamEvent is not None and isinstance(message, StreamEvent):
+                text = _extract_stream_text(message.event)
+                if text:
+                    yield {"type": "progress", "message": text}
+                continue
+
+            if ResultMessage is not None and isinstance(message, ResultMessage):
+                raw_output = (
+                    getattr(message, "result", None)
+                    or getattr(message, "content", None)
+                    or getattr(message, "text", None)
+                )
+                break
+
+            if hasattr(message, "content"):
+                content = message.content
+                if isinstance(content, list):
+                    for block in content:
+                        if hasattr(block, "text") and block.text:
+                            last_text = block.text
+                elif isinstance(content, str) and content:
+                    last_text = content
+
+    except Exception as exc:
+        import traceback
+        error_detail = f"{type(exc).__name__}: {exc}"
+        stderr_output = getattr(exc, 'stderr', None) or ""
+        if stderr_output:
+            error_detail += f"\nSTDERR: {stderr_output[:500]}"
+        error_detail += f"\n{traceback.format_exc()[-300:]}"
+        yield {"type": "error", "message": error_detail[:1000]}
+        return
+
+    if raw_output is None and last_text:
+        raw_output = last_text
+
+    if raw_output is None:
+        yield {"type": "error", "message": "QA Agent produced no output"}
+        return
+
+    yield {"type": "result", "data": raw_output}
 
 
 # Streaming versions for SSE endpoints

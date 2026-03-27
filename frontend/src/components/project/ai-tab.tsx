@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Brain, FlaskConical, Loader2, CheckCircle2, XCircle, ChevronUp } from "lucide-react";
+import { Brain, FlaskConical, Monitor, Loader2, CheckCircle2, XCircle, ChevronUp } from "lucide-react";
 
 interface AITabProps {
   projectId: string;
@@ -46,7 +46,7 @@ export function AITab({ projectId }: AITabProps) {
   const [errorMessage, setErrorMessage] = useState("");
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  const handleAnalyze = async () => {
+  const runSSERequest = async (endpoint: string) => {
     setIsAnalyzing(true);
     setAnalyzeStatus("running");
     setProgressLog([]);
@@ -56,7 +56,7 @@ export function AITab({ projectId }: AITabProps) {
     try {
       const token = sessionStorage.getItem("access_token");
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/ai/analyze`,
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}${endpoint}`,
         {
           method: "POST",
           headers: {
@@ -121,6 +121,9 @@ export function AITab({ projectId }: AITabProps) {
     }
   };
 
+  const handleAnalyze = () => runSSERequest(`/api/projects/${projectId}/ai/analyze`);
+  const handleQaFlow = () => runSSERequest(`/api/projects/${projectId}/ai/qa-flow`);
+
   const handleGenerateTests = async () => {
     const body: { pr_number?: number; file_paths?: string[] } = {};
     if (prNumber.trim()) body.pr_number = parseInt(prNumber.trim(), 10);
@@ -158,6 +161,20 @@ export function AITab({ projectId }: AITabProps) {
             <FlaskConical className="mr-1.5 size-4" />
           )}
           테스트 생성
+        </Button>
+
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleQaFlow}
+          disabled={isAnalyzing}
+        >
+          {isAnalyzing ? (
+            <Loader2 className="mr-1.5 size-4 animate-spin" />
+          ) : (
+            <Monitor className="mr-1.5 size-4" />
+          )}
+          QA 테스트
         </Button>
       </div>
 
