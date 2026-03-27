@@ -190,10 +190,22 @@ async def run_agent_stream(
                 elif isinstance(content, str) and content:
                     last_text = content
 
+    except RuntimeError as exc:
+        # cancel scope error from SDK cleanup — ignore if we have results
+        if "cancel scope" in str(exc) and (raw_output or last_text):
+            pass
+        elif "cancel scope" in str(exc):
+            # No result yet, treat as non-fatal — use last_text if available
+            pass
+        else:
+            import traceback
+            error_detail = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-300:]}"
+            logger.error("Agent SDK error: %s", error_detail)
+            yield {"type": "error", "message": error_detail[:1000]}
+            return
     except Exception as exc:
         import traceback
         error_detail = f"{type(exc).__name__}: {exc}"
-        # Try to get stderr from ProcessError
         stderr_output = getattr(exc, 'stderr', None) or getattr(exc, 'error_output', None) or ""
         if stderr_output:
             error_detail += f"\nSTDERR: {stderr_output[:500]}"
