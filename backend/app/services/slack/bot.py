@@ -176,6 +176,14 @@ async def handle_mention(
             )
 
         print(f"[SLACK BOT] query start: '{clean_text}', org_id={org_id}", flush=True)
+
+    # Debug: test org_projects query directly
+    try:
+        from app.services.ai.db_queries import execute_db_query
+        test_result = await execute_db_query(db, "org_projects", {"org_id": str(org_id)})
+        print(f"[SLACK BOT] org_projects direct test: {test_result}", flush=True)
+    except Exception as e:
+        print(f"[SLACK BOT] org_projects direct test FAILED: {type(e).__name__}: {e}", flush=True)
         result_text = None
         last_text = None
         async for message in query(prompt=clean_text, options=options):
