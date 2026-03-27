@@ -172,8 +172,10 @@ async def handle_mention(
                 mcp_servers=mcp_servers,
                 max_turns=10,
                 permission_mode="bypassPermissions",
+                debug_stderr=True,
             )
 
+        print(f"[SLACK BOT] query start: '{clean_text}', org_id={org_id}", flush=True)
         result_text = None
         last_text = None
         async for message in query(prompt=clean_text, options=options):
