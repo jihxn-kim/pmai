@@ -293,7 +293,6 @@ async def stream_qa_flow(
         "playwright": {
             "command": "npx",
             "args": ["-y", "@playwright/mcp@latest"],
-            "env": {"PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright"},
         },
     }
 
