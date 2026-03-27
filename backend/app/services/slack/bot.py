@@ -169,7 +169,7 @@ async def handle_mention(
         options = ClaudeAgentOptions(
             system_prompt=system_prompt,
             allowed_tools=allowed_tools,
-            max_turns=5,
+            max_turns=10,
             permission_mode="bypassPermissions",
         )
         if mcp_servers:
@@ -177,7 +177,7 @@ async def handle_mention(
                 system_prompt=system_prompt,
                 allowed_tools=allowed_tools,
                 mcp_servers=mcp_servers,
-                max_turns=5,
+                max_turns=10,
                 permission_mode="bypassPermissions",
             )
 
