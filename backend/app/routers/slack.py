@@ -116,8 +116,13 @@ async def slack_events(
 
         if bot_token:
             from app.services.slack.bot import handle_mention  # noqa: PLC0415
+            from app.database import async_session as create_session  # noqa: PLC0415
 
-            asyncio.create_task(handle_mention(db, event, bot_token))
+            async def _run_mention():
+                async with create_session() as new_db:
+                    await handle_mention(new_db, event, bot_token)
+
+            asyncio.create_task(_run_mention())
 
     return {"ok": True}
 
