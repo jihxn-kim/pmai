@@ -41,13 +41,15 @@ export function AITab({ projectId }: AITabProps) {
 
   // SSE streaming state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [runningType, setRunningType] = useState<"analyze" | "qa" | null>(null);
   const [progressLog, setProgressLog] = useState<ProgressEntry[]>([]);
   const [analyzeStatus, setAnalyzeStatus] = useState<"idle" | "running" | "done" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  const runSSERequest = async (endpoint: string) => {
+  const runSSERequest = async (endpoint: string, type: "analyze" | "qa") => {
     setIsAnalyzing(true);
+    setRunningType(type);
     setAnalyzeStatus("running");
     setProgressLog([]);
     setErrorMessage("");
@@ -115,14 +117,15 @@ export function AITab({ projectId }: AITabProps) {
       setErrorMessage(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsAnalyzing(false);
+      setRunningType(null);
       setTimeout(() => {
         if (analyzeStatus !== "error") setAnalyzeStatus("idle");
       }, 5000);
     }
   };
 
-  const handleAnalyze = () => runSSERequest(`/api/projects/${projectId}/ai/analyze`);
-  const handleQaFlow = () => runSSERequest(`/api/projects/${projectId}/ai/qa-flow`);
+  const handleAnalyze = () => runSSERequest(`/api/projects/${projectId}/ai/analyze`, "analyze");
+  const handleQaFlow = () => runSSERequest(`/api/projects/${projectId}/ai/qa-flow`, "qa");
 
   const handleGenerateTests = async () => {
     const body: { pr_number?: number; file_paths?: string[] } = {};
@@ -141,7 +144,7 @@ export function AITab({ projectId }: AITabProps) {
       {/* Action buttons */}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={handleAnalyze} disabled={isAnalyzing}>
-          {isAnalyzing ? (
+          {runningType === "analyze" ? (
             <Loader2 className="mr-1.5 size-4 animate-spin" />
           ) : (
             <Brain className="mr-1.5 size-4" />
@@ -169,7 +172,7 @@ export function AITab({ projectId }: AITabProps) {
           onClick={handleQaFlow}
           disabled={isAnalyzing}
         >
-          {isAnalyzing ? (
+          {runningType === "qa" ? (
             <Loader2 className="mr-1.5 size-4 animate-spin" />
           ) : (
             <Monitor className="mr-1.5 size-4" />
@@ -198,7 +201,7 @@ export function AITab({ projectId }: AITabProps) {
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 dark:text-blue-400 border-b border-blue-200 dark:border-blue-800">
             <Loader2 className="size-4 animate-spin" />
-            <span>AI가 분석 중입니다...</span>
+            <span>{runningType === "qa" ? "QA 테스트 진행 중..." : "AI가 분석 중입니다..."}</span>
           </div>
           <div className="max-h-64 overflow-y-auto px-3 py-2 space-y-1 font-mono text-xs text-blue-600 dark:text-blue-400">
             {progressLog.length === 0 && (
