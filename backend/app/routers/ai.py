@@ -136,37 +136,15 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
         repo_owner = parts[-2] if len(parts) >= 2 else ""
         repo_name = parts[-1] if len(parts) >= 1 else ""
 
-        # Use a queue so we can send heartbeats without interrupting the agent stream
-        queue: asyncio.Queue = asyncio.Queue()
-
-        async def _feed_queue():
-            try:
-                async for event in stream_project_analysis(github_token, repo_owner, repo_name, project_id=str(project_id), org_id=str(project.org_id)):
-                    await queue.put(event)
-            except Exception as e:
-                await queue.put({"type": "error", "message": str(e)[:500]})
-            finally:
-                await queue.put(None)  # sentinel
-
-        feeder = asyncio.create_task(_feed_queue())
-
-        while True:
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=10.0)
-            except asyncio.TimeoutError:
-                yield ": heartbeat\n\n"
-                continue
-
-            if event is None:
-                break  # stream ended
-
+        # Stream directly from SDK — no create_task to avoid cancel scope errors
+        got_result = False
+        async for event in stream_project_analysis(github_token, repo_owner, repo_name, project_id=str(project_id), org_id=str(project.org_id)):
             if event["type"] == "progress":
                 yield f"data: {json.dumps(event)}\n\n"
             elif event["type"] == "result":
-                result_text = event["data"]  # Now plain text, not dict
-                # Parse structured issues from ```json:issues block
+                got_result = True
+                result_text = event["data"]
                 issues = _parse_issues(result_text)
-                # Take first 200 chars as summary, full text in detail
                 summary = result_text[:200] + "..." if len(result_text) > 200 else result_text
                 review = AIReview(
                     project_id=project.id,
@@ -181,7 +159,6 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                 db.add(review)
                 await db.flush()
 
-                # Update member expertise from analysis
                 await _update_member_expertise(db, result_text)
 
                 job.status = JobStatus.completed
@@ -189,7 +166,6 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                 job.completed_at = datetime.now(timezone.utc)
                 await db.commit()
 
-                # Slack notification
                 try:
                     from app.services.slack.notifications import send_slack_notification
                     issue_count = len(issues)
@@ -212,15 +188,13 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
                 await db.commit()
                 yield f"data: {json.dumps(event)}\n\n"
 
-        await feeder
-
-        # If loop ended without result or error, mark failed
-        await db.refresh(job)
-        if job.status == JobStatus.running:
-            job.status = JobStatus.failed
-            job.error_message = "Stream ended without result"
-            await db.commit()
-            yield f"data: {json.dumps({'type': 'error', 'message': 'AI가 결과를 반환하지 않았습니다'})}\n\n"
+        if not got_result:
+            await db.refresh(job)
+            if job.status == JobStatus.running:
+                job.status = JobStatus.failed
+                job.error_message = "Stream ended without result"
+                await db.commit()
+                yield f"data: {json.dumps({'type': 'error', 'message': 'AI가 결과를 반환하지 않았습니다'})}\n\n"
 
     except Exception as exc:
         job.status = JobStatus.failed
@@ -286,56 +260,36 @@ async def _sse_qa_flow(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSessi
         except Exception:
             pass
 
-    queue: asyncio.Queue = asyncio.Queue()
+    try:
+        async for event in stream_qa_flow(
+            frontend_url=settings.frontend_url,
+            github_token=github_token,
+            project_id=str(project_id),
+            org_id=str(project.org_id),
+        ):
+            if event["type"] == "progress":
+                yield f"data: {json.dumps(event)}\n\n"
+            elif event["type"] == "result":
+                result_text = event["data"]
+                summary = result_text[:200] + "..." if len(result_text) > 200 else result_text
+                review = AIReview(
+                    project_id=project.id,
+                    type=AIReviewType.test_scenario,
+                    status=AIReviewStatus.completed,
+                    summary=summary,
+                    detail={"text": result_text},
+                    suggestions=[],
+                    requested_by=user_id,
+                    completed_at=datetime.now(timezone.utc),
+                )
+                db.add(review)
+                await db.commit()
+                yield f"data: {json.dumps({'type': 'result', 'review_id': str(review.id)})}\n\n"
+            elif event["type"] == "error":
+                yield f"data: {json.dumps(event)}\n\n"
+    except Exception as exc:
+        yield f"data: {json.dumps({'type': 'error', 'message': str(exc)[:300]})}\n\n"
 
-    async def _feed_queue():
-        try:
-            async for event in stream_qa_flow(
-                frontend_url=settings.frontend_url,
-                github_token=github_token,
-                project_id=str(project_id),
-                org_id=str(project.org_id),
-            ):
-                await queue.put(event)
-        except Exception as e:
-            await queue.put({"type": "error", "message": str(e)[:500]})
-        finally:
-            await queue.put(None)
-
-    feeder = asyncio.create_task(_feed_queue())
-
-    while True:
-        try:
-            event = await asyncio.wait_for(queue.get(), timeout=15.0)
-        except asyncio.TimeoutError:
-            yield ": heartbeat\n\n"
-            continue
-
-        if event is None:
-            break
-
-        if event["type"] == "progress":
-            yield f"data: {json.dumps(event)}\n\n"
-        elif event["type"] == "result":
-            result_text = event["data"]
-            summary = result_text[:200] + "..." if len(result_text) > 200 else result_text
-            review = AIReview(
-                project_id=project.id,
-                type=AIReviewType.test_scenario,
-                status=AIReviewStatus.completed,
-                summary=summary,
-                detail={"text": result_text},
-                suggestions=[],
-                requested_by=user_id,
-                completed_at=datetime.now(timezone.utc),
-            )
-            db.add(review)
-            await db.commit()
-            yield f"data: {json.dumps({'type': 'result', 'review_id': str(review.id)})}\n\n"
-        elif event["type"] == "error":
-            yield f"data: {json.dumps(event)}\n\n"
-
-    await feeder
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 
