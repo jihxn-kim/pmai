@@ -1,7 +1,7 @@
 """Standalone MCP server for PM Agent DB tools.
 
 Runs as a separate process (stdio) — Agent SDK launches this automatically.
-Usage: python -m app.services.ai.pm_mcp_server <project_id>
+Usage: python -m app.services.ai.pm_mcp_server <project_id> [org_id]
 """
 import asyncio
 import json
@@ -20,6 +20,7 @@ engine = create_async_engine(DATABASE_URL, pool_size=2, max_overflow=0)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 PROJECT_ID = sys.argv[1] if len(sys.argv) > 1 else ""
+ORG_ID = sys.argv[2] if len(sys.argv) > 2 else ""
 
 server = Server("pm-agent")
 
@@ -62,6 +63,11 @@ async def list_tools() -> list[types.Tool]:
             description="Get recent activity log: commits, PR events, task changes.",
             inputSchema={"type": "object", "properties": {}, "required": []},
         ),
+        types.Tool(
+            name="get_org_projects",
+            description="Get all projects in the organization with their status and GitHub repo.",
+            inputSchema={"type": "object", "properties": {}, "required": []},
+        ),
     ]
 
 
@@ -79,6 +85,11 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
             "get_recent_ai_reviews": "ai_reviews",
             "get_project_activity": "activity",
         }
+        if name == "get_org_projects":
+            from app.services.ai.db_queries import execute_db_query
+            result = await execute_db_query(db, "org_projects", {"org_id": ORG_ID})
+            return [types.TextContent(type="text", text=json.dumps(result, default=str))]
+
         query_name = query_map.get(name)
         if not query_name:
             return [types.TextContent(type="text", text=f"Unknown tool: {name}")]

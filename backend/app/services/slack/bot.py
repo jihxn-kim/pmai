@@ -111,12 +111,11 @@ async def handle_mention(
     mcp_servers = {}
 
     # PM Agent DB tools
-    if project_id:
-        mcp_servers["pm_agent"] = {
-            "command": "python",
-            "args": ["-m", "app.services.ai.pm_mcp_server", project_id],
-            "env": {"DATABASE_URL": os.environ.get("DATABASE_URL", "")},
-        }
+    mcp_servers["pm_agent"] = {
+        "command": "python",
+        "args": ["-m", "app.services.ai.pm_mcp_server", project_id or "", str(org_id)],
+        "env": {"DATABASE_URL": os.environ.get("DATABASE_URL", "")},
+    }
 
     system_prompt = """당신은 PM Agent 슬랙 봇입니다. 프로젝트 관리를 도와주는 어시스턴트입니다.
 

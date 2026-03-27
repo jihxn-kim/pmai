@@ -192,4 +192,25 @@ async def execute_db_query(db: AsyncSession, query_name: str, params: dict) -> d
             ],
         }
 
+    elif query_name == "org_projects":
+        org_id = uuid.UUID(params["org_id"])
+        result = await db.execute(
+            select(Project).where(Project.org_id == org_id).order_by(Project.created_at.desc())
+        )
+        projects = result.scalars().all()
+        return {
+            "total": len(projects),
+            "projects": [
+                {
+                    "id": str(p.id),
+                    "name": p.name,
+                    "description": p.description,
+                    "status": p.status if hasattr(p, "status") else None,
+                    "github_repo_url": p.github_repo_url,
+                    "created_at": str(p.created_at),
+                }
+                for p in projects
+            ],
+        }
+
     return {"error": f"Unknown query: {query_name}"}
