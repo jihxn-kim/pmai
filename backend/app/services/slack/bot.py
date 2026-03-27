@@ -117,24 +117,53 @@ async def handle_mention(
         "env": {"DATABASE_URL": os.environ.get("DATABASE_URL", "")},
     }
 
-    system_prompt = """당신은 PM Agent 슬랙 봇입니다. 프로젝트 관리를 도와주는 어시스턴트입니다.
+    # GitHub MCP
+    github_token = None
+    try:
+        from app.models.organization import Organization
+        from app.services.github_service import get_installation_token
+        org = await db.get(Organization, org_id)
+        if org and org.github_installation_id:
+            github_token = await get_installation_token(org.github_installation_id)
+    except Exception:
+        pass
 
-사용자의 질문에 자연스럽게 대화하세요. PM Agent 도구를 사용해서 실제 데이터를 조회하고 답변하세요.
+    if github_token:
+        mcp_servers["github"] = {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
+            "env": {"GITHUB_TOKEN": github_token},
+        }
 
-할 수 있는 일:
-- 프로젝트 상태/진행률 조회
-- 태스크 목록, 진행 상황 확인
+    allowed_tools = ["mcp__pm_agent__*"]
+    if github_token:
+        allowed_tools.append("mcp__github__*")
+
+    system_prompt = """당신은 PM Agent 슬랙 봇입니다. 프로젝트 관리를 도와주는 풀스택 어시스턴트입니다.
+
+사용자의 질문에 자연스럽게 대화하세요. 도구를 사용해서 실제 데이터를 조회하고 답변하세요.
+
+## 사용 가능한 도구
+
+### PM Agent 도구 (프로젝트 관리 데이터)
+- 프로젝트 목록, 상태, 진행률 조회
+- 태스크 목록, 멤버 정보, 이슈/문제점
+- PR 현황, 최근 활동, AI 리뷰 결과
+
+### GitHub MCP 도구 (코드 및 GitHub 데이터)
+- 코드 파일 읽기, 커밋 히스토리 조회
+- PR 생성/조회, 이슈 생성/조회
+- 레포지토리 구조 탐색
+
+## 할 수 있는 일
+- 프로젝트 상태 확인, 태스크 관리
+- GitHub 이슈 생성, PR 조회
+- 코드 파일 내용 확인
+- 프로젝트 분석 및 문제점 파악
 - 팀 멤버 정보 조회
-- 이슈/문제점 파악
-- PR 현황 확인
-- 최근 활동 내역
 
 답변은 간결하게 Slack에 맞는 형식으로 하세요. 마크다운을 Slack 형식(*bold*, _italic_, `code`)으로 사용하세요.
 반드시 한국어로 답변하세요."""
-
-    allowed_tools = []
-    if mcp_servers:
-        allowed_tools.append("mcp__pm_agent__*")
 
     try:
         options = ClaudeAgentOptions(
