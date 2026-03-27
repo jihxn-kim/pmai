@@ -99,37 +99,43 @@ async def list_tools() -> list[types.Tool]:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
-    from app.services.ai.db_queries import execute_db_query
+    import traceback
+    try:
+        from app.services.ai.db_queries import execute_db_query
 
-    async with async_session() as db:
-        if name == "get_org_projects":
-            result = await execute_db_query(db, "org_projects", {"org_id": ORG_ID})
+        async with async_session() as db:
+            if name == "get_org_projects":
+                result = await execute_db_query(db, "org_projects", {"org_id": ORG_ID})
+                return [types.TextContent(type="text", text=json.dumps(result, default=str))]
+
+            # All other tools need a project_id
+            project_id = await resolve_project_id(db, arguments)
+            if not project_id:
+                project_name = arguments.get("project_name", "")
+                return [types.TextContent(
+                    type="text",
+                    text=json.dumps({"error": f"프로젝트 '{project_name}'을 찾을 수 없습니다. get_org_projects로 프로젝트 목록을 확인하세요."}),
+                )]
+
+            query_map = {
+                "get_project_tasks": "tasks",
+                "get_project_members": "members",
+                "get_project_issues": "issues",
+                "get_project_progress": "progress",
+                "get_pull_requests": "pull_requests",
+                "get_recent_ai_reviews": "ai_reviews",
+                "get_project_activity": "activity",
+            }
+            query_name = query_map.get(name)
+            if not query_name:
+                return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
+
+            result = await execute_db_query(db, query_name, {"project_id": project_id})
             return [types.TextContent(type="text", text=json.dumps(result, default=str))]
-
-        # All other tools need a project_id
-        project_id = await resolve_project_id(db, arguments)
-        if not project_id:
-            project_name = arguments.get("project_name", "")
-            return [types.TextContent(
-                type="text",
-                text=json.dumps({"error": f"프로젝트 '{project_name}'을 찾을 수 없습니다. get_org_projects로 프로젝트 목록을 확인하세요."}),
-            )]
-
-        query_map = {
-            "get_project_tasks": "tasks",
-            "get_project_members": "members",
-            "get_project_issues": "issues",
-            "get_project_progress": "progress",
-            "get_pull_requests": "pull_requests",
-            "get_recent_ai_reviews": "ai_reviews",
-            "get_project_activity": "activity",
-        }
-        query_name = query_map.get(name)
-        if not query_name:
-            return [types.TextContent(type="text", text=f"Unknown tool: {name}")]
-
-        result = await execute_db_query(db, query_name, {"project_id": project_id})
-        return [types.TextContent(type="text", text=json.dumps(result, default=str))]
+    except Exception as e:
+        print(f"[MCP ERROR] {name}: {type(e).__name__}: {e}", flush=True)
+        print(traceback.format_exc()[-300:], flush=True)
+        return [types.TextContent(type="text", text=json.dumps({"error": str(e)}))]
 
 
 async def main():
