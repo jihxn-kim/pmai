@@ -1,6 +1,7 @@
-"""Slack bot mention handler."""
+"""Slack bot mention handler — uses Claude Agent SDK for natural conversation."""
 
 import logging
+import os
 import re
 import uuid
 
@@ -8,21 +9,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.slack import SlackChannelMapping, SlackUserMapping, SlackWorkspace
-from app.services.slack.formatters import (
-    format_briefing_notification,
-    format_error_message,
-    format_my_tasks,
-    format_project_status,
-)
-from app.services.slack.tools import execute_tool, parse_intent
 
 logger = logging.getLogger(__name__)
 
 try:
-    from slack_sdk.web.async_client import AsyncWebClient  # noqa: F401
+    from slack_sdk.web.async_client import AsyncWebClient
     HAS_SLACK_SDK = True
 except ImportError:
     HAS_SLACK_SDK = False
+
+try:
+    from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+    HAS_SDK = True
+except ImportError:
+    HAS_SDK = False
 
 
 # ---------------------------------------------------------------------------
@@ -33,11 +33,8 @@ async def resolve_user_from_slack(
     db: AsyncSession,
     slack_user_id: str,
 ) -> uuid.UUID | None:
-    """Return the internal user UUID for a Slack user ID, or None."""
     result = await db.execute(
-        select(SlackUserMapping).where(
-            SlackUserMapping.slack_user_id == slack_user_id
-        )
+        select(SlackUserMapping).where(SlackUserMapping.slack_user_id == slack_user_id)
     )
     mapping = result.scalar_one_or_none()
     return mapping.user_id if mapping else None
@@ -47,119 +44,39 @@ async def resolve_org_from_channel(
     db: AsyncSession,
     slack_channel_id: str,
 ) -> uuid.UUID | None:
-    """Return the org UUID associated with a Slack channel.
-
-    Checks project channel mappings first, then workspace org channel.
-    """
-    # Check project channel mapping
     proj_result = await db.execute(
-        select(SlackChannelMapping).where(
-            SlackChannelMapping.slack_channel_id == slack_channel_id
-        )
+        select(SlackChannelMapping).where(SlackChannelMapping.slack_channel_id == slack_channel_id)
     )
     proj_mapping = proj_result.scalar_one_or_none()
     if proj_mapping:
-        # Get org via project
-        from app.models.project import Project  # noqa: PLC0415
-
-        project_result = await db.execute(
-            select(Project).where(Project.id == proj_mapping.project_id)
-        )
+        from app.models.project import Project
+        project_result = await db.execute(select(Project).where(Project.id == proj_mapping.project_id))
         project = project_result.scalar_one_or_none()
         if project:
             return project.org_id
 
-    # Check workspace org channel
     ws_result = await db.execute(
-        select(SlackWorkspace).where(
-            SlackWorkspace.slack_org_channel_id == slack_channel_id
-        )
+        select(SlackWorkspace).where(SlackWorkspace.slack_org_channel_id == slack_channel_id)
     )
     workspace = ws_result.scalar_one_or_none()
     if workspace:
         return workspace.org_id
 
+    # Fallback: find workspace by any channel in the team
+    ws_all = await db.execute(select(SlackWorkspace))
+    for ws in ws_all.scalars():
+        return ws.org_id
+
     return None
 
 
-# ---------------------------------------------------------------------------
-# Result formatter
-# ---------------------------------------------------------------------------
-
-def _format_result(tool_name: str | None, result: dict) -> list[dict]:
-    """Convert an execute_tool result dict into Slack Block Kit blocks."""
-    if "error" in result:
-        return format_error_message(result["error"])
-
-    if tool_name == "get_project_status":
-        return format_project_status(
-            name=result.get("project_name", ""),
-            progress=result.get("progress", 0.0),
-            done=result.get("done", 0),
-            total=result.get("total", 0),
-            in_progress=result.get("in_progress", 0),
-            open_prs=result.get("open_prs", 0),
-        )
-
-    if tool_name == "get_my_tasks":
-        return format_my_tasks(result.get("tasks", []))
-
-    if tool_name == "get_latest_briefing":
-        org_summary = result.get("org_summary", {})
-        week_start = result.get("week_start", "")
-        return format_briefing_notification(org_summary, week_start)
-
-    if tool_name in ("request_code_review", "run_project_analysis"):
-        message = result.get("message", "작업이 요청되었습니다.")
-        return [
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"✅ {message}"},
-            }
-        ]
-
-    if tool_name == "get_project_issues":
-        issues = result.get("issues", [])
-        project_name = result.get("project_name", "")
-        if not issues:
-            return [
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"✨ *{project_name}* 프로젝트에 문제점이 없습니다!",
-                    },
-                }
-            ]
-        lines = []
-        for issue in issues[:10]:
-            issue_type = issue.get("type", "")
-            title = issue.get("title", "")
-            emoji = {
-                "overdue_task": "🔴",
-                "stale_pr": "🟠",
-                "pending_review": "🟡",
-                "unassigned_task": "⚪",
-            }.get(issue_type, "⚠️")
-            lines.append(f"{emoji} {title}")
-        return [
-            {
-                "type": "header",
-                "text": {"type": "plain_text", "text": f"⚠️ {project_name} 이슈 목록"},
-            },
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": "\n".join(lines)},
-            },
-        ]
-
-    # Fallback
-    return [
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn", "text": str(result)},
-        }
-    ]
+async def resolve_project_id_from_org(db: AsyncSession, org_id: uuid.UUID) -> str | None:
+    from app.models.project import Project
+    result = await db.execute(
+        select(Project).where(Project.org_id == org_id).limit(1)
+    )
+    project = result.scalar_one_or_none()
+    return str(project.id) if project else None
 
 
 # ---------------------------------------------------------------------------
@@ -171,73 +88,97 @@ async def handle_mention(
     slack_event: dict,
     bot_token: str,
 ) -> None:
-    """Process an app_mention event and reply in the same channel."""
+    """Process an app_mention event — Claude converses naturally with PM tools."""
     channel = slack_event.get("channel", "")
     raw_text: str = slack_event.get("text", "")
     slack_user_id: str = slack_event.get("user", "")
 
-    # Strip mention tokens like <@UXXXXXXXX>
     clean_text = re.sub(r"<@[A-Z0-9]+>", "", raw_text).strip()
 
-    # Resolve identities
-    user_id = await resolve_user_from_slack(db, slack_user_id)
     org_id = await resolve_org_from_channel(db, channel)
-
     if not org_id:
-        logger.warning("handle_mention: could not resolve org for channel %s", channel)
-        blocks = format_error_message("이 채널에 연결된 조직을 찾을 수 없습니다.")
-        await _send_reply(bot_token, channel, blocks)
+        await _send_reply(bot_token, channel, "이 채널에 연결된 조직을 찾을 수 없습니다.")
         return
 
-    if not user_id:
-        # Still allow anonymous queries — use a nil UUID so services degrade gracefully
-        user_id = uuid.UUID(int=0)
-
-    # Parse intent via Claude
-    intent = await parse_intent(clean_text)
-
-    if intent["tool"] is None:
-        # Claude returned a text clarification
-        blocks = [
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": intent["text"] or "무엇을 도와드릴까요?"},
-            }
-        ]
-        await _send_reply(bot_token, channel, blocks)
+    if not HAS_SDK:
+        await _send_reply(bot_token, channel, "AI 서비스를 사용할 수 없습니다.")
         return
 
-    # Execute the tool
-    result = await execute_tool(
-        db,
-        tool_name=intent["tool"],
-        tool_input=intent["input"],
-        user_id=user_id,
-        org_id=org_id,
-    )
+    # Get project_id for PM tools
+    project_id = await resolve_project_id_from_org(db, org_id)
 
-    blocks = _format_result(intent["tool"], result)
-    await _send_reply(bot_token, channel, blocks)
+    # Build MCP servers for Claude
+    mcp_servers = {}
+
+    # PM Agent DB tools
+    if project_id:
+        mcp_servers["pm_agent"] = {
+            "command": "python",
+            "args": ["-m", "app.services.ai.pm_mcp_server", project_id],
+            "env": {"DATABASE_URL": os.environ.get("DATABASE_URL", "")},
+        }
+
+    system_prompt = """당신은 PM Agent 슬랙 봇입니다. 프로젝트 관리를 도와주는 어시스턴트입니다.
+
+사용자의 질문에 자연스럽게 대화하세요. PM Agent 도구를 사용해서 실제 데이터를 조회하고 답변하세요.
+
+할 수 있는 일:
+- 프로젝트 상태/진행률 조회
+- 태스크 목록, 진행 상황 확인
+- 팀 멤버 정보 조회
+- 이슈/문제점 파악
+- PR 현황 확인
+- 최근 활동 내역
+
+답변은 간결하게 Slack에 맞는 형식으로 하세요. 마크다운을 Slack 형식(*bold*, _italic_, `code`)으로 사용하세요.
+반드시 한국어로 답변하세요."""
+
+    allowed_tools = []
+    if mcp_servers:
+        allowed_tools.append("mcp__pm_agent__*")
+
+    try:
+        options = ClaudeAgentOptions(
+            system_prompt=system_prompt,
+            allowed_tools=allowed_tools,
+            max_turns=5,
+            permission_mode="bypassPermissions",
+        )
+        if mcp_servers:
+            options = ClaudeAgentOptions(
+                system_prompt=system_prompt,
+                allowed_tools=allowed_tools,
+                mcp_servers=mcp_servers,
+                max_turns=5,
+                permission_mode="bypassPermissions",
+            )
+
+        result_text = None
+        async for message in query(prompt=clean_text, options=options):
+            if isinstance(message, ResultMessage):
+                result_text = message.result
+
+        if result_text:
+            # Truncate for Slack 4000 char limit
+            if len(result_text) > 3900:
+                result_text = result_text[:3900] + "\n\n_...결과가 잘렸습니다._"
+            await _send_reply(bot_token, channel, result_text)
+        else:
+            await _send_reply(bot_token, channel, "요청을 처리하지 못했습니다.")
+
+    except Exception as e:
+        logger.warning(f"handle_mention failed: {e}")
+        await _send_reply(bot_token, channel, f"오류가 발생했습니다: {str(e)[:200]}")
 
 
-async def _send_reply(bot_token: str, channel: str, blocks: list[dict]) -> None:
-    """Send a Block Kit message to a Slack channel."""
+async def _send_reply(bot_token: str, channel: str, text: str) -> None:
+    """Send a text message to a Slack channel."""
     if not HAS_SLACK_SDK:
         logger.warning("slack_sdk is not installed; cannot send reply")
         return
 
     try:
-        from slack_sdk.web.async_client import AsyncWebClient  # noqa: PLC0415
-
         client = AsyncWebClient(token=bot_token)
-        text_fallback = " ".join(
-            b.get("text", {}).get("text", "") if isinstance(b.get("text"), dict) else ""
-            for b in blocks
-        ).strip() or "응답이 준비되었습니다."
-        await client.chat_postMessage(
-            channel=channel,
-            text=text_fallback,
-            blocks=blocks,
-        )
+        await client.chat_postMessage(channel=channel, text=text)
     except Exception as exc:
         logger.warning("_send_reply failed: %s", exc)
