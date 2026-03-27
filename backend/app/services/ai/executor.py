@@ -110,6 +110,7 @@ async def run_agent_stream(
     github_token: str | None = None,
     extra_tools: list[str] | None = None,
     project_id: str | None = None,
+    org_id: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Async generator that yields progress events then the final result.
 
@@ -133,11 +134,11 @@ async def run_agent_stream(
         allowed_tools.append("mcp__github__*")
 
     # Add PM Agent DB tools as separate process MCP server
-    if project_id:
+    if project_id or org_id:
         import os
         mcp_servers["pm_agent"] = {
             "command": "python",
-            "args": ["-m", "app.services.ai.pm_mcp_server", project_id],
+            "args": ["-m", "app.services.ai.pm_mcp_server", org_id or "", project_id or ""],
             "env": {"DATABASE_URL": os.environ.get("DATABASE_URL", "")},
         }
         allowed_tools.append("mcp__pm_agent__*")
@@ -274,7 +275,7 @@ async def run_weekly_briefing(github_token: str, repo_owner: str, repo_name: str
 
 
 # Streaming versions for SSE endpoints
-async def stream_project_analysis(github_token: str, repo_owner: str, repo_name: str, project_id: str | None = None) -> AsyncGenerator[dict, None]:
+async def stream_project_analysis(github_token: str, repo_owner: str, repo_name: str, project_id: str | None = None, org_id: str | None = None) -> AsyncGenerator[dict, None]:
     user_prompt = (
         f"{repo_owner}/{repo_name} 프로젝트의 현재 상태를 분석하세요.\n\n"
         f"다음 도구들을 활용하세요:\n"
@@ -282,5 +283,5 @@ async def stream_project_analysis(github_token: str, repo_owner: str, repo_name:
         f"- PM Agent 도구: get_project_tasks, get_project_progress, get_project_issues, get_project_members, get_pull_requests\n\n"
         f"코드와 프로젝트 관리 데이터를 모두 결합해서 종합 분석을 제공하세요."
     )
-    async for event in run_agent_stream(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token, project_id=project_id):
+    async for event in run_agent_stream(PROJECT_ANALYST_PROMPT, user_prompt, github_token=github_token, project_id=project_id, org_id=org_id):
         yield event

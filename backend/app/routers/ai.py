@@ -141,7 +141,7 @@ async def _sse_analysis(project_id: uuid.UUID, user_id: uuid.UUID, db: AsyncSess
 
         async def _feed_queue():
             try:
-                async for event in stream_project_analysis(github_token, repo_owner, repo_name, project_id=str(project_id)):
+                async for event in stream_project_analysis(github_token, repo_owner, repo_name, project_id=str(project_id), org_id=str(project.org_id)):
                     await queue.put(event)
             except Exception as e:
                 await queue.put({"type": "error", "message": str(e)[:500]})

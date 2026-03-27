@@ -113,7 +113,7 @@ async def handle_mention(
     # PM Agent DB tools
     mcp_servers["pm_agent"] = {
         "command": "python",
-        "args": ["-m", "app.services.ai.pm_mcp_server", project_id or "", str(org_id)],
+        "args": ["-m", "app.services.ai.pm_mcp_server", str(org_id), project_id or ""],
         "env": {"DATABASE_URL": os.environ.get("DATABASE_URL", "")},
     }
 
