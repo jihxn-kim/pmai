@@ -171,14 +171,13 @@ async def run_agent_stream(
                     yield {"type": "progress", "message": text}
                 continue
 
-            # Handle ResultMessage
+            # Handle ResultMessage — don't break, let generator finish naturally
             if ResultMessage is not None and isinstance(message, ResultMessage):
                 raw_output = (
                     getattr(message, "result", None)
                     or getattr(message, "content", None)
                     or getattr(message, "text", None)
                 )
-                break
 
             # Capture assistant text as fallback (no progress yield — delta already sent above)
             if hasattr(message, "content"):
