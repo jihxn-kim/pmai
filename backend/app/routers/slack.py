@@ -95,6 +95,10 @@ async def slack_events(
     if payload.get("type") == "url_verification":
         return {"challenge": payload.get("challenge")}
 
+    # Ignore Slack retries
+    if request.headers.get("X-Slack-Retry-Num"):
+        return {"ok": True}
+
     event = payload.get("event", {})
     event_type = event.get("type", "")
 
