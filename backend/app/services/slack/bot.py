@@ -182,15 +182,24 @@ async def handle_mention(
             )
 
         result_text = None
+        last_text = None
         async for message in query(prompt=clean_text, options=options):
             if isinstance(message, ResultMessage):
                 result_text = message.result
+            elif hasattr(message, "content"):
+                content = message.content
+                if isinstance(content, list):
+                    for block in content:
+                        if hasattr(block, "text") and block.text:
+                            last_text = block.text
+                elif isinstance(content, str) and content:
+                    last_text = content
 
-        if result_text:
-            # Truncate for Slack 4000 char limit
-            if len(result_text) > 3900:
-                result_text = result_text[:3900] + "\n\n_...결과가 잘렸습니다._"
-            await _send_reply(bot_token, channel, result_text)
+        final = result_text or last_text
+        if final:
+            if len(final) > 3900:
+                final = final[:3900] + "\n\n_...결과가 잘렸습니다._"
+            await _send_reply(bot_token, channel, final)
         else:
             await _send_reply(bot_token, channel, "요청을 처리하지 못했습니다.")
 
