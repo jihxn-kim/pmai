@@ -70,14 +70,6 @@ async def resolve_org_from_channel(
     return None
 
 
-async def resolve_project_id_from_org(db: AsyncSession, org_id: uuid.UUID) -> str | None:
-    from app.models.project import Project
-    result = await db.execute(
-        select(Project).where(Project.org_id == org_id).limit(1)
-    )
-    project = result.scalar_one_or_none()
-    return str(project.id) if project else None
-
 
 # ---------------------------------------------------------------------------
 # Main mention handler
@@ -104,16 +96,13 @@ async def handle_mention(
         await _send_reply(bot_token, channel, "AI 서비스를 사용할 수 없습니다.")
         return
 
-    # Get project_id for PM tools
-    project_id = await resolve_project_id_from_org(db, org_id)
-
     # Build MCP servers for Claude
     mcp_servers = {}
 
-    # PM Agent DB tools
+    # PM Agent DB tools (no default project — Claude picks via get_org_projects)
     mcp_servers["pm_agent"] = {
         "command": "python",
-        "args": ["-m", "app.services.ai.pm_mcp_server", str(org_id), project_id or ""],
+        "args": ["-m", "app.services.ai.pm_mcp_server", str(org_id)],
         "env": {"DATABASE_URL": os.environ.get("DATABASE_URL", "")},
     }
 
