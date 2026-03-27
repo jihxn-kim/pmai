@@ -6,8 +6,11 @@ RUN apt-get update && apt-get install -y curl git && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Claude Code CLI 설치
-RUN npm install -g @anthropic-ai/claude-code
+# Claude Code CLI + Playwright MCP 설치
+RUN npm install -g @anthropic-ai/claude-code @playwright/mcp
+
+# Playwright 브라우저 설치 (Chromium)
+RUN npx playwright install --with-deps chromium
 
 WORKDIR /app
 

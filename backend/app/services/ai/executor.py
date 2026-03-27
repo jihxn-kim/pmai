@@ -292,7 +292,7 @@ async def stream_qa_flow(
     extra_mcp = {
         "playwright": {
             "command": "npx",
-            "args": ["-y", "@anthropic-ai/mcp-server-playwright"],
+            "args": ["-y", "@playwright/mcp@latest"],
         },
     }
 
