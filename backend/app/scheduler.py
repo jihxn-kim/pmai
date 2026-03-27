@@ -113,3 +113,12 @@ try:
     scheduler.add_job(poll_notion_changes, CronTrigger(minute="*/5"))
 except ImportError:
     pass
+
+
+async def refresh_claude_credentials():
+    from app.services.ai.refresh_credentials import refresh_if_needed
+    await refresh_if_needed()
+
+
+# Check every hour, refresh if less than 60 min remaining
+scheduler.add_job(refresh_claude_credentials, CronTrigger(minute=0))

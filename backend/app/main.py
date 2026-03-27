@@ -38,6 +38,12 @@ async def lifespan(app_instance: FastAPI):
         scheduler.start()
     if HAS_WORKER:
         await recover_stuck_jobs()
+    # Refresh credentials on startup
+    try:
+        from app.services.ai.refresh_credentials import refresh_if_needed
+        await refresh_if_needed()
+    except Exception:
+        pass
     yield
     # Shutdown: mark running AI jobs as queued for recovery on next start
     async with async_session() as db:
