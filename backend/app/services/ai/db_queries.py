@@ -15,7 +15,7 @@ from app.models.user import User
 
 async def execute_db_query(db: AsyncSession, query_name: str, params: dict) -> dict:
     """Execute a named DB query and return serializable results."""
-    project_id = uuid.UUID(params["project_id"])
+    project_id = uuid.UUID(params["project_id"]) if params.get("project_id") else None
 
     if query_name == "tasks":
         result = await db.execute(
