@@ -163,7 +163,21 @@ If you can't determine the action, respond with:
             lines = text.split("\n")
             text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
-        parsed = json.loads(text)
+        # Find first valid JSON object in the text
+        start = text.find("{")
+        if start == -1:
+            return {"tool": None, "input": None, "text": text}
+        depth = 0
+        end = start
+        for i, ch in enumerate(text[start:], start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        parsed = json.loads(text[start:end])
         return {
             "tool": parsed.get("tool"),
             "input": parsed.get("input", {}),
