@@ -303,7 +303,7 @@ async def stream_qa_flow(
     extra_mcp = {
         "playwright": {
             "command": "npx",
-            "args": ["@playwright/mcp", "--browser", "chromium", "--headless", "--viewport-size", "1280,720", "--cap-screenshot-height", "600"],
+            "args": ["@playwright/mcp", "--browser", "chrome", "--headless", "--viewport-size", "1280x720"],
         },
     }
 
@@ -334,6 +334,7 @@ async def stream_qa_flow(
         "permission_mode": "bypassPermissions",
         "mcp_servers": extra_mcp,
         "include_partial_messages": True,
+        "debug_stderr": True,
     }
 
     options = ClaudeAgentOptions(**options_kwargs)
@@ -348,13 +349,13 @@ async def stream_qa_flow(
                     yield {"type": "progress", "message": text}
                 continue
 
+            # Handle ResultMessage — don't break, let generator finish naturally
             if ResultMessage is not None and isinstance(message, ResultMessage):
                 raw_output = (
                     getattr(message, "result", None)
                     or getattr(message, "content", None)
                     or getattr(message, "text", None)
                 )
-                break
 
             if hasattr(message, "content"):
                 content = message.content
@@ -365,6 +366,18 @@ async def stream_qa_flow(
                 elif isinstance(content, str) and content:
                     last_text = content
 
+    except RuntimeError as exc:
+        # cancel scope error from SDK cleanup — ignore if we have results
+        if "cancel scope" in str(exc) and (raw_output or last_text):
+            pass
+        elif "cancel scope" in str(exc):
+            pass
+        else:
+            import traceback
+            error_detail = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-300:]}"
+            logger.error("QA Agent SDK error: %s", error_detail)
+            yield {"type": "error", "message": error_detail[:1000]}
+            return
     except Exception as exc:
         import traceback
         error_detail = f"{type(exc).__name__}: {exc}"
@@ -372,6 +385,7 @@ async def stream_qa_flow(
         if stderr_output:
             error_detail += f"\nSTDERR: {stderr_output[:500]}"
         error_detail += f"\n{traceback.format_exc()[-300:]}"
+        logger.error("QA Agent SDK error: %s", error_detail)
         yield {"type": "error", "message": error_detail[:1000]}
         return
 
