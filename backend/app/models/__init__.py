@@ -10,6 +10,7 @@ from app.models.slack import SlackChannelMapping, SlackUserMapping, SlackWorkspa
 from app.models.weekly_briefing import BriefingStatus, WeeklyBriefing
 from app.models.calendar import CalendarEventMapping, GoogleCalendarConnection
 from app.models.notion import NotionConnection, NotionDatabaseMapping, NotionTaskMapping
+from app.models.system_config import SystemConfig
 
 __all__ = [
     # User models
@@ -58,4 +59,6 @@ __all__ = [
     "NotionConnection",
     "NotionDatabaseMapping",
     "NotionTaskMapping",
+    # System config
+    "SystemConfig",
 ]

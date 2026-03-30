@@ -213,6 +213,15 @@ async def run_agent_stream(
         yield {"type": "error", "message": error_detail[:1000]}
         return
 
+    # Sync refreshed credentials to DB after SDK call
+    try:
+        from app.database import async_session as _async_session
+        from app.services.ai.refresh_credentials import sync_credentials_to_db
+        async with _async_session() as _db:
+            await sync_credentials_to_db(_db)
+    except Exception:
+        pass
+
     if raw_output is None and last_text:
         raw_output = last_text
 
@@ -388,6 +397,15 @@ async def stream_qa_flow(
         logger.error("QA Agent SDK error: %s", error_detail)
         yield {"type": "error", "message": error_detail[:1000]}
         return
+
+    # Sync refreshed credentials to DB after QA SDK call
+    try:
+        from app.database import async_session as _async_session
+        from app.services.ai.refresh_credentials import sync_credentials_to_db
+        async with _async_session() as _db:
+            await sync_credentials_to_db(_db)
+    except Exception:
+        pass
 
     if raw_output is None and last_text:
         raw_output = last_text

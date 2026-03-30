@@ -249,6 +249,13 @@ async def handle_mention(
         if session_id:
             _channel_sessions[channel] = session_id
 
+        # Sync refreshed credentials back to DB
+        try:
+            from app.services.ai.refresh_credentials import sync_credentials_to_db
+            await sync_credentials_to_db(db)
+        except Exception:
+            pass
+
         final = result_text or last_text
         if final:
             if len(final) > 3900:

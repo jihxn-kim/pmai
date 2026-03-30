@@ -38,12 +38,14 @@ async def lifespan(app_instance: FastAPI):
         scheduler.start()
     if HAS_WORKER:
         await recover_stuck_jobs()
-    # Refresh credentials on startup
+    # Load credentials from DB (or env var) and write to disk
     try:
-        from app.services.ai.refresh_credentials import refresh_if_needed
-        await refresh_if_needed()
-    except Exception:
-        pass
+        from app.services.ai.refresh_credentials import init_credentials
+        async with async_session() as db:
+            await init_credentials(db)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Credential init failed: {e}")
     yield
     # Shutdown: mark running AI jobs as queued for recovery on next start
     async with async_session() as db:
