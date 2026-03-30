@@ -213,4 +213,65 @@ async def execute_db_query(db: AsyncSession, query_name: str, params: dict) -> d
             ],
         }
 
+    elif query_name == "resolve_slack_user":
+        from app.models.slack import SlackUserMapping
+        from app.models.organization import OrgMember
+        slack_user_id = params.get("slack_user_id", "")
+        result = await db.execute(
+            select(SlackUserMapping, User)
+            .join(User, User.id == SlackUserMapping.user_id)
+            .where(SlackUserMapping.slack_user_id == slack_user_id)
+        )
+        row = result.first()
+        if not row:
+            return {"error": f"Slack user {slack_user_id}에 연결된 멤버가 없습니다."}
+        mapping, user = row
+        # Get org role if org_id provided
+        org_id_str = params.get("org_id")
+        role = None
+        if org_id_str:
+            role_result = await db.execute(
+                select(OrgMember).where(
+                    OrgMember.user_id == user.id,
+                    OrgMember.org_id == uuid.UUID(org_id_str),
+                )
+            )
+            org_member = role_result.scalar_one_or_none()
+            if org_member:
+                role = org_member.role.value
+        return {
+            "user_id": str(user.id),
+            "name": user.name,
+            "github_username": user.github_username,
+            "email": user.email,
+            "role": role,
+        }
+
+    elif query_name == "resolve_member_slack":
+        from app.models.slack import SlackUserMapping
+        member_name = params.get("member_name", "")
+        # Search by name or github_username
+        result = await db.execute(
+            select(User, SlackUserMapping)
+            .outerjoin(SlackUserMapping, SlackUserMapping.user_id == User.id)
+            .where(
+                (User.name.ilike(f"%{member_name}%"))
+                | (User.github_username.ilike(f"%{member_name}%"))
+            )
+        )
+        rows = result.all()
+        if not rows:
+            return {"error": f"'{member_name}'에 해당하는 멤버를 찾을 수 없습니다."}
+        return {
+            "members": [
+                {
+                    "user_id": str(user.id),
+                    "name": user.name,
+                    "github_username": user.github_username,
+                    "slack_user_id": mapping.slack_user_id if mapping else None,
+                }
+                for user, mapping in rows
+            ],
+        }
+
     return {"error": f"Unknown query: {query_name}"}

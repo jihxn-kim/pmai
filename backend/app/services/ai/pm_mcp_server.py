@@ -94,6 +94,28 @@ async def list_tools() -> list[types.Tool]:
             description="Get recent activity log: commits, PR events, task changes.",
             inputSchema={"type": "object", "properties": PROJECT_NAME_PROP, "required": []},
         ),
+        types.Tool(
+            name="resolve_slack_user",
+            description="Find organization member by Slack user ID. Returns name, github_username, email, role.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "slack_user_id": {"type": "string", "description": "Slack user ID (e.g. U12345678)"},
+                },
+                "required": ["slack_user_id"],
+            },
+        ),
+        types.Tool(
+            name="resolve_member_slack",
+            description="Find Slack user ID by member name or GitHub username. Useful for sending notifications.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "member_name": {"type": "string", "description": "멤버 이름 또는 GitHub username"},
+                },
+                "required": ["member_name"],
+            },
+        ),
     ]
 
 
@@ -106,6 +128,19 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         async with async_session() as db:
             if name == "get_org_projects":
                 result = await execute_db_query(db, "org_projects", {"org_id": ORG_ID})
+                return [types.TextContent(type="text", text=json.dumps(result, default=str))]
+
+            if name == "resolve_slack_user":
+                result = await execute_db_query(db, "resolve_slack_user", {
+                    "slack_user_id": arguments.get("slack_user_id", ""),
+                    "org_id": ORG_ID,
+                })
+                return [types.TextContent(type="text", text=json.dumps(result, default=str))]
+
+            if name == "resolve_member_slack":
+                result = await execute_db_query(db, "resolve_member_slack", {
+                    "member_name": arguments.get("member_name", ""),
+                })
                 return [types.TextContent(type="text", text=json.dumps(result, default=str))]
 
             # All other tools need a project_id
