@@ -1,4 +1,4 @@
-"""Slack bot mention handler — uses Claude Agent SDK for natural conversation."""
+"""Slack bot mention handler — uses Claude Agent SDK with session persistence."""
 
 import logging
 import os
@@ -19,10 +19,21 @@ except ImportError:
     HAS_SLACK_SDK = False
 
 try:
-    from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage
+    from claude_agent_sdk import query, ClaudeAgentOptions, ResultMessage, SystemMessage
     HAS_SDK = True
 except ImportError:
+    query = None
+    ClaudeAgentOptions = None
+    ResultMessage = None
+    SystemMessage = None
     HAS_SDK = False
+
+
+# ---------------------------------------------------------------------------
+# Channel session store (in-memory, resets on container restart)
+# ---------------------------------------------------------------------------
+
+_channel_sessions: dict[str, str] = {}  # {slack_channel_id: claude_session_id}
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +81,24 @@ async def resolve_org_from_channel(
     return None
 
 
+async def _resolve_slack_display_name(bot_token: str, slack_user_id: str) -> str:
+    """Get Slack user's display name via API."""
+    if not HAS_SLACK_SDK:
+        return slack_user_id
+    try:
+        client = AsyncWebClient(token=bot_token)
+        resp = await client.users_info(user=slack_user_id)
+        user = resp.get("user", {})
+        profile = user.get("profile", {})
+        return (
+            profile.get("display_name")
+            or profile.get("real_name")
+            or user.get("real_name")
+            or slack_user_id
+        )
+    except Exception:
+        return slack_user_id
+
 
 # ---------------------------------------------------------------------------
 # Main mention handler
@@ -87,6 +116,12 @@ async def handle_mention(
 
     clean_text = re.sub(r"<@[A-Z0-9]+>", "", raw_text).strip()
 
+    # Handle /reset command
+    if clean_text.strip().lower() in ("리셋", "reset", "/reset"):
+        _channel_sessions.pop(channel, None)
+        await _send_reply(bot_token, channel, "세션이 초기화되었습니다. 새로운 대화를 시작합니다.")
+        return
+
     org_id = await resolve_org_from_channel(db, channel)
     if not org_id:
         await _send_reply(bot_token, channel, "이 채널에 연결된 조직을 찾을 수 없습니다.")
@@ -95,6 +130,9 @@ async def handle_mention(
     if not HAS_SDK:
         await _send_reply(bot_token, channel, "AI 서비스를 사용할 수 없습니다.")
         return
+
+    # Resolve user display name
+    display_name = await _resolve_slack_display_name(bot_token, slack_user_id)
 
     # Build MCP servers for Claude
     mcp_servers = {}
@@ -132,6 +170,11 @@ async def handle_mention(
 
 사용자의 질문에 자연스럽게 대화하세요. 도구를 사용해서 실제 데이터를 조회하고 답변하세요.
 
+## 대화 컨텍스트
+- 이 대화는 Slack 채널에서 진행됩니다. 여러 사용자가 참여할 수 있습니다.
+- 각 메시지 앞에 [유저: 이름] 형식으로 누가 보낸 메시지인지 표시됩니다.
+- 이전 대화 맥락을 기억하고 자연스럽게 이어가세요.
+
 ## 사용 가능한 도구
 
 ### PM Agent 도구 (프로젝트 관리 데이터)
@@ -158,28 +201,41 @@ async def handle_mention(
 답변은 간결하게 Slack에 맞는 형식으로 하세요. 마크다운을 Slack 형식(*bold*, _italic_, `code`)으로 사용하세요.
 반드시 한국어로 답변하세요."""
 
+    # Prepend user identity to the message
+    user_prompt = f"[유저: {display_name}] {clean_text}"
+
+    # Check for existing session on this channel
+    existing_session = _channel_sessions.get(channel)
+
     try:
-        options = ClaudeAgentOptions(
-            system_prompt=system_prompt,
-            allowed_tools=allowed_tools,
-            max_turns=10,
-            permission_mode="bypassPermissions",
-        )
-        if mcp_servers:
-            options = ClaudeAgentOptions(
-                system_prompt=system_prompt,
-                allowed_tools=allowed_tools,
-                mcp_servers=mcp_servers,
-                max_turns=10,
-                permission_mode="bypassPermissions",
-                debug_stderr=True,
-            )
+        options_kwargs = {
+            "system_prompt": system_prompt,
+            "allowed_tools": allowed_tools,
+            "mcp_servers": mcp_servers,
+            "max_turns": 10,
+            "permission_mode": "bypassPermissions",
+            "debug_stderr": True,
+        }
+
+        # Resume existing session if available
+        if existing_session:
+            options_kwargs["resume"] = existing_session
+
+        options = ClaudeAgentOptions(**options_kwargs)
 
         result_text = None
         last_text = None
-        async for message in query(prompt=clean_text, options=options):
+        session_id = None
+        async for message in query(prompt=user_prompt, options=options):
+            # Capture session_id from SystemMessage
+            if SystemMessage is not None and isinstance(message, SystemMessage):
+                if hasattr(message, "session_id") and message.session_id:
+                    session_id = message.session_id
+
             if isinstance(message, ResultMessage):
                 result_text = message.result
+                if hasattr(message, "session_id") and message.session_id:
+                    session_id = message.session_id
             elif hasattr(message, "content"):
                 content = message.content
                 if isinstance(content, list):
@@ -188,6 +244,10 @@ async def handle_mention(
                             last_text = block.text
                 elif isinstance(content, str) and content:
                     last_text = content
+
+        # Store session_id for this channel
+        if session_id:
+            _channel_sessions[channel] = session_id
 
         final = result_text or last_text
         if final:
@@ -201,7 +261,14 @@ async def handle_mention(
         import traceback
         print(f"[SLACK BOT ERROR] {type(e).__name__}: {e}")
         print(traceback.format_exc()[-500:])
-        await _send_reply(bot_token, channel, f"오류가 발생했습니다: {str(e)[:200]}")
+
+        # If resume failed, clear session and retry without it
+        if existing_session and "session" in str(e).lower():
+            logger.warning("Session resume failed, clearing session for channel %s", channel)
+            _channel_sessions.pop(channel, None)
+            await _send_reply(bot_token, channel, "이전 세션을 불러오지 못해 새 대화를 시작합니다. 다시 말씀해주세요.")
+        else:
+            await _send_reply(bot_token, channel, f"오류가 발생했습니다: {str(e)[:200]}")
 
 
 async def _send_reply(bot_token: str, channel: str, text: str) -> None:
