@@ -170,8 +170,9 @@ export default function OrgDashboardPage({ params }: OrgDashboardPageProps) {
                   </CardHeader>
                   <CardContent>
                     <p className="line-clamp-3 text-sm text-muted-foreground">
-                      {(latestBriefing as { org_summary?: string }).org_summary ??
-                        "Click to view the full briefing."}
+                      {typeof (latestBriefing as { org_summary?: unknown }).org_summary === "string"
+                        ? (latestBriefing as { org_summary: string }).org_summary
+                        : "Click to view the full briefing."}
                     </p>
                   </CardContent>
                 </Card>

@@ -177,7 +177,11 @@ export function BriefingCard({ briefing }: BriefingCardProps) {
       <CardContent className="flex flex-col gap-4">
         {/* Org summary */}
         {briefing.org_summary && (
-          <p className="text-sm text-muted-foreground">{briefing.org_summary}</p>
+          <p className="text-sm text-muted-foreground">
+            {typeof briefing.org_summary === "string"
+              ? briefing.org_summary
+              : JSON.stringify(briefing.org_summary)}
+          </p>
         )}
 
         {/* Project sections */}
