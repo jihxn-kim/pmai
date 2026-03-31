@@ -233,6 +233,9 @@ async for message in query(
 
 - **Extended thinking**: `max_thinking_tokens` 설정 시 StreamEvent가 발생하지 않음
 - **Structured output**: JSON 결과는 최종 ResultMessage.structured_output에서만 제공
+- **SDK MCP + include_partial_messages 충돌**: `create_sdk_mcp_server`(인프로세스 MCP)와 `include_partial_messages=True`를 함께 사용하면 백프레셔 데드락 발생. StreamEvent 대량 발생 → 내부 메시지 큐(버퍼 100) 포화 → MCP 제어 메시지 처리 불가 → 도구 실패/행. stdio MCP(command+args 외부 프로세스)는 별도 파이프라서 영향 없음. (Issue [#425](https://github.com/anthropics/claude-agent-sdk-python/issues/425), [#701](https://github.com/anthropics/claude-agent-sdk-python/issues/701) — 미해결)
+- **SDK MCP stdin 타임아웃**: SDK MCP 사용 시 60초 후 stdin이 닫혀 MCP 통신 끊김. SDK >= 0.1.50에서 수정됨 (PR #731). 구버전 임시 해결: `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT=3600000`. (Issue [#730](https://github.com/anthropics/claude-agent-sdk-python/issues/730))
+- **스트리밍 루프에서 break 금지**: `async for message in query(...)` 루프에서 ResultMessage 수신 후 `break`하면 generator 강제 중단으로 `RuntimeError: cancel scope` 에러 발생. break 없이 generator가 자연 종료되도록 해야 함. (pmai 트러블슈팅에서 발견)
 
 ---
 
