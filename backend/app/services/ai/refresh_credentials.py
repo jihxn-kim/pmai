@@ -48,7 +48,7 @@ async def save_credentials_to_db(db: AsyncSession, creds: dict) -> None:
     else:
         db.add(SystemConfig(key=DB_KEY, value=value))
     await db.commit()
-    logger.info("Credentials saved to DB")
+    logger.warning("Credentials saved to DB")
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ async def init_credentials(db: AsyncSession) -> bool:
     # 1. Try DB first
     creds = await load_credentials_from_db(db)
     if creds:
-        logger.info("Loaded credentials from DB")
+        logger.warning("Loaded credentials from DB (expiresAt=%s)", creds.get("claudeAiOauth", {}).get("expiresAt"))
         _write_disk(creds)
         return True
 
@@ -94,7 +94,7 @@ async def init_credentials(db: AsyncSession) -> bool:
     if env_creds:
         try:
             creds = json.loads(env_creds)
-            logger.info("Loaded credentials from env var, seeding to DB")
+            logger.warning("Loaded credentials from env var, seeding to DB")
             _write_disk(creds)
             await save_credentials_to_db(db, creds)
             return True
@@ -125,7 +125,7 @@ async def sync_credentials_to_db(db: AsyncSession) -> None:
     db_rt = (db_creds or {}).get("claudeAiOauth", {}).get("refreshToken")
 
     if disk_rt and disk_rt != db_rt:
-        logger.info("Credentials changed on disk, syncing to DB")
+        logger.warning("Credentials changed on disk, syncing to DB")
         await save_credentials_to_db(db, disk_creds)
 
 
