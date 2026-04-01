@@ -312,7 +312,7 @@ async def stream_qa_flow(
     extra_mcp = {
         "playwright": {
             "command": "npx",
-            "args": ["@playwright/mcp", "--browser", "chrome", "--headless", "--viewport-size", "1280x720"],
+            "args": ["@playwright/mcp", "--headless"],
         },
     }
 

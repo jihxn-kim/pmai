@@ -6,8 +6,8 @@ RUN apt-get update && apt-get install -y curl git && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Claude Code CLI + Playwright MCP 설치
-RUN npm install -g @anthropic-ai/claude-code @playwright/mcp
+# Claude Code CLI + Playwright MCP 설치 (0.0.41 고정 — 최신 버전 도구 등록 버그)
+RUN npm install -g @anthropic-ai/claude-code @playwright/mcp@0.0.41
 
 WORKDIR /app
 
