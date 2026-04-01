@@ -77,29 +77,36 @@ def _write_disk(creds: dict) -> None:
 # ---------------------------------------------------------------------------
 
 async def init_credentials(db: AsyncSession) -> bool:
-    """Load credentials from DB (or env var fallback) and write to disk.
+    """Load credentials: compare DB and env var, use whichever is newer.
 
     Call this once at startup or before first SDK call.
     Returns True if credentials are available.
     """
-    # 1. Try DB first
-    creds = await load_credentials_from_db(db)
-    if creds:
-        logger.warning("Loaded credentials from DB (expiresAt=%s)", creds.get("claudeAiOauth", {}).get("expiresAt"))
-        _write_disk(creds)
-        return True
+    def _exp(c: dict | None) -> int:
+        return (c or {}).get("claudeAiOauth", {}).get("expiresAt", 0)
 
-    # 2. Fallback to env var
-    env_creds = os.environ.get("CLAUDE_CREDENTIALS")
-    if env_creds:
+    db_creds = await load_credentials_from_db(db)
+    env_creds = None
+    env_raw = os.environ.get("CLAUDE_CREDENTIALS")
+    if env_raw:
         try:
-            creds = json.loads(env_creds)
-            logger.warning("Loaded credentials from env var, seeding to DB")
-            _write_disk(creds)
-            await save_credentials_to_db(db, creds)
-            return True
+            env_creds = json.loads(env_raw)
         except json.JSONDecodeError:
             logger.warning("Invalid JSON in CLAUDE_CREDENTIALS env var")
+
+    db_exp = _exp(db_creds)
+    env_exp = _exp(env_creds)
+
+    if db_creds and db_exp >= env_exp:
+        logger.warning("Using credentials from DB (expiresAt=%s)", db_exp)
+        _write_disk(db_creds)
+        return True
+
+    if env_creds:
+        logger.warning("Using credentials from env var (expiresAt=%s, DB expiresAt=%s)", env_exp, db_exp or "none")
+        _write_disk(env_creds)
+        await save_credentials_to_db(db, env_creds)
+        return True
 
     logger.warning("No credentials found in DB or env var")
     return False

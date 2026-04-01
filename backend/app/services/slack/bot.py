@@ -250,8 +250,8 @@ async def handle_mention(
         try:
             from app.services.ai.refresh_credentials import sync_credentials_to_db
             await sync_credentials_to_db(db)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to sync credentials to DB: %s", e)
 
         final = result_text or last_text
         if final:
