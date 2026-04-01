@@ -51,6 +51,7 @@ PM Agent에서 사용하는 Claude Agent SDK의 핵심 내용을 정리한 문�
 | agents | dict | 서브에이전트 정의 (AgentDefinition) |
 | can_use_tool | callable | tool 승인/거부 콜백 |
 | output_format | dict | 구조화된 JSON 출력 (`{"type": "json_schema", "schema": {...}}`) |
+| max_buffer_size | int | CLI stdout JSON 파서 버퍼 제한 (기본 1MB). Playwright 스크린샷 등 대용량 MCP 응답 시 `10 * 1024 * 1024` (10MB)로 설정 필요 (Issue [#98](https://github.com/anthropics/claude-agent-sdk-python/issues/98)) |
 | plugins | list | 플러그인 로드 (`{"type": "local", "path": "..."}`) |
 
 ---
@@ -264,6 +265,78 @@ async for message in query(
 - **SDK MCP + include_partial_messages 충돌**: `create_sdk_mcp_server`(인프로세스 MCP)와 `include_partial_messages=True`를 함께 사용하면 백프레셔 데드락 발생. StreamEvent 대량 발생 → 내부 메시지 큐(버퍼 100) 포화 → MCP 제어 메시지 처리 불가 → 도구 실패/행. stdio MCP(command+args 외부 프로세스)는 별도 파이프라서 영향 없음. (Issue [#425](https://github.com/anthropics/claude-agent-sdk-python/issues/425), [#701](https://github.com/anthropics/claude-agent-sdk-python/issues/701) — 미해결)
 - **SDK MCP stdin 타임아웃**: SDK MCP 사용 시 60초 후 stdin이 닫혀 MCP 통신 끊김. SDK >= 0.1.50에서 수정됨 (PR #731). 구버전 임시 해결: `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT=3600000`. (Issue [#730](https://github.com/anthropics/claude-agent-sdk-python/issues/730))
 - **스트리밍 루프에서 break 금지**: `async for message in query(...)` 루프에서 ResultMessage 수신 후 `break`하면 generator 강제 중단으로 `RuntimeError: cancel scope` 에러 발생. break 없이 generator가 자연 종료되도록 해야 함. (pmai 트러블슈팅에서 발견)
+- **JSON 버퍼 1MB 제한**: MCP 응답(특히 Playwright 스크린샷 base64)이 1MB를 초과하면 `CLIJSONDecodeError` 발생. `max_buffer_size=10*1024*1024`로 해결. (Issue [#98](https://github.com/anthropics/claude-agent-sdk-python/issues/98))
+
+---
+
+## Playwright MCP 트러블슈팅
+
+pmai에서 Playwright MCP를 동작시키기까지 겪은 문제들 정리.
+
+### 1. MCP 도구를 아예 못 찾음
+
+**증상**: `ToolSearch`에서 `mcp__playwright__*` 도구가 안 나옴. GitHub/PM Agent MCP는 정상.
+
+**원인**: CLI 인자가 잘못되어 MCP 서버가 시작 즉시 종료됨. MCP 서버 시작 실패는 조용히 무시됨.
+
+| 문제 | 기존값 | 수정 |
+|------|--------|------|
+| `--browser` | `chromium` (미지원) | `chrome` |
+| `--viewport-size` | `1280,720` (콤마) | `1280x720` (x) |
+| `--cap-screenshot-height` | 존재하지 않는 옵션 | 제거 |
+
+**교훈**: `npx @playwright/mcp --help`로 인자 확인 필수. `debug_stderr: True` 항상 설정.
+
+### 2. 도구 등록 버그 (@playwright/mcp 버전)
+
+**증상**: MCP 서버는 시작되지만 도구 목록이 Claude에 노출 안 됨.
+
+**원인**: `@playwright/mcp` 최신 버전(0.0.56+)에서 도구 등록 버그. (Issue [microsoft/playwright-mcp#1359](https://github.com/microsoft/playwright-mcp/issues/1359))
+
+**해결**: `@playwright/mcp@0.0.41`로 버전 고정. Dockerfile에서 `npm install -g @playwright/mcp@0.0.41`.
+
+### 3. Chrome 경로 불일치
+
+**증상**: `Chromium distribution 'chrome' is not found at /opt/google/chrome/chrome`
+
+**원인**: Dockerfile에서 `npx playwright install chromium`으로 Chromium 설치했는데, MCP는 Chrome(`/opt/google/chrome/chrome`)을 찾음.
+
+**해결**: `npx playwright install --with-deps chrome`으로 Chrome 설치.
+
+### 4. 스크린샷 1MB 버퍼 초과
+
+**증상**: `Failed to decode JSON: JSON message exceeded maximum buffer size of 1048576 bytes`
+
+**원인**: Playwright 스크린샷이 base64로 인코딩되어 JSON에 포함 → SDK의 1MB 버퍼 제한 초과.
+
+**해결**: `ClaudeAgentOptions(max_buffer_size=10*1024*1024)`. 스크린샷을 유지하면서 버퍼만 늘림.
+
+### 최종 동작하는 설정
+
+```python
+# executor.py
+extra_mcp = {
+    "playwright": {
+        "command": "npx",
+        "args": ["@playwright/mcp", "--headless", "--viewport-size", "1280x720"],
+    },
+}
+
+options = ClaudeAgentOptions(
+    mcp_servers=extra_mcp,
+    allowed_tools=["mcp__playwright__*"],
+    max_buffer_size=10 * 1024 * 1024,  # 10MB
+    include_partial_messages=True,
+    debug_stderr=True,
+    permission_mode="bypassPermissions",
+)
+```
+
+```dockerfile
+# Dockerfile
+RUN npm install -g @anthropic-ai/claude-code @playwright/mcp@0.0.41
+RUN npx playwright install --with-deps chrome
+```
 
 ---
 

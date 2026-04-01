@@ -152,6 +152,7 @@ async def run_agent_stream(
         "permission_mode": "bypassPermissions",
         "include_partial_messages": True,
         "debug_stderr": True,
+        "max_buffer_size": 10 * 1024 * 1024,
     }
     if cwd:
         options_kwargs["cwd"] = cwd
@@ -312,7 +313,7 @@ async def stream_qa_flow(
     extra_mcp = {
         "playwright": {
             "command": "npx",
-            "args": ["@playwright/mcp", "--headless", "--viewport-size", "1280x720", "--image-responses", "omit"],
+            "args": ["@playwright/mcp", "--headless", "--viewport-size", "1280x720"],
         },
     }
 
@@ -344,6 +345,7 @@ async def stream_qa_flow(
         "mcp_servers": extra_mcp,
         "include_partial_messages": True,
         "debug_stderr": True,
+        "max_buffer_size": 10 * 1024 * 1024,
     }
 
     options = ClaudeAgentOptions(**options_kwargs)
