@@ -340,7 +340,7 @@ async def stream_qa_flow(
         "allowed_tools": allowed_tools,
         "system_prompt": QA_FLOW_PROMPT,
         "model": settings.ai_model,
-        "max_turns": settings.ai_max_turns,
+        "max_turns": 50,
         "permission_mode": "bypassPermissions",
         "mcp_servers": extra_mcp,
         "include_partial_messages": True,
