@@ -22,8 +22,8 @@ RUN pip install --no-cache-dir --upgrade mcp && \
 
 COPY . .
 
-# Playwright 브라우저 + 시스템 의존성 설치 (root에서 --with-deps로 한번에)
-RUN npx playwright install --with-deps chromium
+# Chrome 브라우저 + 시스템 의존성 설치 (MCP가 /opt/google/chrome/chrome을 찾음)
+RUN npx playwright install --with-deps chrome
 
 # non-root 사용자 생성 (Claude Code CLI가 root에서 bypassPermissions 차단)
 # 브라우저를 appuser 홈으로 복사
