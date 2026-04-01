@@ -27,6 +27,34 @@ PM Agent에서 사용하는 Claude Agent SDK의 핵심 내용을 정리한 문�
 
 ---
 
+## ClaudeAgentOptions 파라미터 레퍼런스
+
+| 파라미터 | 타입 | 용도 |
+|---------|------|------|
+| system_prompt | str 또는 dict | 시스템 프롬프트 (문자열 또는 `{"type": "preset", "preset": "claude_code", "append": "..."}`) |
+| model | str | 모델 선택 (claude-sonnet-4-6, claude-opus-4-6 등) |
+| allowed_tools | list[str] | 허용 tool 목록 (와일드카드 가능: `mcp__github__*`) |
+| disallowed_tools | list[str] | 차단 tool 목록 (bypassPermissions에서도 차단) |
+| permission_mode | str | default / acceptEdits / bypassPermissions / plan |
+| max_turns | int | tool 호출 라운드트립 제한 |
+| max_budget_usd | float | 비용 제한 (USD). 초과 시 에이전트 중단 |
+| include_partial_messages | bool | StreamEvent 토큰 단위 스트리밍 활성화. SDK MCP와 함께 사용 시 백프레셔 주의 (Issue #425) |
+| debug_stderr | bool | CLI subprocess의 stderr 출력을 포함. MCP 서버 시작 실패 등 디버깅에 필수 |
+| mcp_servers | dict | MCP 서버 설정. stdio: `{"command": "...", "args": [...], "env": {...}}`, SDK MCP: `create_sdk_mcp_server()` 결과 |
+| setting_sources | list[str] | 설정 로드 소스. `["user"]`, `["project"]`, `["local"]` 조합. 생략 시 파일시스템 설정 안 읽음. `"project"` 포함해야 CLAUDE.md/Skills 로드 |
+| cwd | str | CLI subprocess의 작업 디렉토리 |
+| env | dict | CLI subprocess에 전달할 환경변수. 주의: setting_sources로 로드된 settings.json의 env와 충돌 가능 (Issue #217, SDK >= 0.1.50에서 수정) |
+| resume | str | 세션 ID로 이전 대화 이어가기. 세션 파일이 디스크에 있어야 함 |
+| continue_conversation | bool | 가장 최근 세션 자동 이어가기 |
+| fork_session | bool | resume과 함께 사용. 원본 유지하면서 새 분기 생성 |
+| hooks | dict | PreToolUse/PostToolUse/Stop 등 hook 콜백 등록 |
+| agents | dict | 서브에이전트 정의 (AgentDefinition) |
+| can_use_tool | callable | tool 승인/거부 콜백 |
+| output_format | dict | 구조화된 JSON 출력 (`{"type": "json_schema", "schema": {...}}`) |
+| plugins | list | 플러그인 로드 (`{"type": "local", "path": "..."}`) |
+
+---
+
 ## 설치 및 기본 사용
 
 공식 문서: https://platform.claude.com/docs/en/agent-sdk/overview
