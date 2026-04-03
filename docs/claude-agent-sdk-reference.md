@@ -258,6 +258,58 @@ async for message in query(
         print(f"\n\n--- Complete ---")
 ```
 
+### 토큰 사용량 및 과금
+
+#### 토큰 종류별 과금 (Anthropic API)
+
+| 토큰 종류 | 설명 | 과금 배율 | Opus 단가 |
+|:-----------|:-----|:---------|:----------|
+| `input_tokens` | 캐시에 해당하지 않는 새 입력 토큰 | 1x | $15 / MTok |
+| `cache_creation_input_tokens` | 캐시에 새로 쓴 토큰 (ephemeral_5m) | 1.25x | $18.75 / MTok |
+| `cache_read_input_tokens` | 기존 캐시에서 읽은 토큰 | 0.1x | $1.50 / MTok |
+| `output_tokens` | 모델이 생성한 출력 토큰 | 1x | $75 / MTok |
+
+세 가지 input 토큰의 합 = 해당 API 호출의 전체 컨텍스트 크기. 매 호출마다 시스템 프롬프트 + 대화 히스토리 + 도구 정의가 캐시 토큰으로 재전송되므로, 호출 간 누적 합산하면 의미 없이 뻥튀기됨.
+
+#### SDK 메시지별 usage 데이터
+
+| 메시지 타입 | usage 위치 | 정확성 | 비고 |
+|:-----------|:-----------|:------|:-----|
+| `StreamEvent (message_start)` | `event.message.usage` | input 정확, output 부정확 | output_tokens는 스트리밍 시작 시점 스냅샷 (부분값) |
+| `StreamEvent (message_delta)` | `event.usage` | output 정확 | output_tokens가 해당 호출의 최종값. input 없음 |
+| `AssistantMessage` | `message.usage` | input 정확, output 부정확 | message_start와 동일한 스냅샷. **사용 비권장** |
+| `ResultMessage` | `message.usage` | 전체 합산 정확 | 전 턴의 input/output/cache 합산 + `total_cost_usd` 포함 |
+
+#### ResultMessage 필드
+
+```python
+# ResultMessage 주요 필드
+message.usage          # dict: input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens
+message.total_cost_usd # float: 전체 세션의 실제 과금액 (캐시 할인 반영)
+message.model_usage    # dict: 모델별 사용량 상세
+message.duration_ms    # int: 전체 소요 시간
+message.num_turns      # int: 대화 턴 수
+```
+
+#### 실시간 토큰 트래킹 권장 방식
+
+```python
+# message_delta에서 output_tokens 실시간 추적 (per-API-call 최종값)
+if ev_type == "message_delta":
+    usage = ev.get("usage", {})
+    output_tokens = usage.get("output_tokens", 0)  # 이 호출의 최종 output
+
+# ResultMessage에서 세션 전체 비용 확인
+if isinstance(message, ResultMessage):
+    total_cost = message.total_cost_usd  # 실제 과금액
+    usage = message.usage                # 전체 합산 토큰
+```
+
+**주의사항:**
+- `AssistantMessage.usage.output_tokens`는 스트리밍 시작 시점 값이므로 실제보다 훨씬 적게 나옴. 사용 금지.
+- `cache_creation_input_tokens + cache_read_input_tokens`를 호출 간 누적하면 컨텍스트가 중복 카운팅됨.
+- 사용자에게 보여줄 값으로는 `output_tokens` 누적 (실시간) 또는 `total_cost_usd` (완료 시)를 권장.
+
 ### 알려진 제한사항
 
 - **Extended thinking**: `max_thinking_tokens` 설정 시 StreamEvent가 발생하지 않음
